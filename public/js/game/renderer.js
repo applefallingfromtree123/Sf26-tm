@@ -217,8 +217,9 @@ export class Renderer {
       const pl = this.players[ctx.controlled].position;
       const d = ctx.attackDir || 1;
       const tx = pl.x * 0.7 + bx * 0.3, tz = pl.z * 0.7 + bz * 0.3;
-      pos = new THREE.Vector3(tx - d * 13, 6.5, tz + (tz > 0 ? 1 : -1) * 0);
-      look = new THREE.Vector3(tx + d * 10, 0.5, tz);
+      // keep the player in the upper-middle of the frame (clear of the radar)
+      pos = new THREE.Vector3(tx - d * 11.5, 5.2, tz);
+      look = new THREE.Vector3(tx + d * 3.5, 0.2, tz);
       fov = 55;
       this.camPos.lerp(pos, Math.min(1, dt * 3.5)); this.camLook.lerp(look, Math.min(1, dt * 4));
     } else if (mode === 'close') {
