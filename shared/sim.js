@@ -1512,7 +1512,13 @@ export class Match {
     for (const p of this.players) {
       if (p.off) continue;
       if (p.stateT > 0) { p.stateT -= dt; if (p.stateT <= 0) p.state = 0; }
-      if (p === taker) { p.dvx = 0; p.dvz = 0; }
+      if (p === taker) {
+        if (sp.pendingAct) { // run-up: jog onto the ball before striking it
+          const dx = b.x - p.x, dz = b.z - p.z, dd = Math.hypot(dx, dz) || 1;
+          const s = Math.min(this.maxSpeed(p) * 0.55, dd * 6);
+          p.dvx = dx / dd * s; p.dvz = dz / dd * s;
+        } else { p.dvx = 0; p.dvz = 0; }
+      }
       else if (sp.type === 'throwin' || sp.type === 'goalkick') { const [tx, tz] = this.shapePos(p, b.x, b.z, p.team === sp.team); this.steerTo(p, tx, clamp(tz, -HW + 1, HW - 1), 0.6); }
       else { p.dvx = 0; p.dvz = 0; }
       if (p.human && p !== taker && sp.type !== 'penalty') { const ci = this.controllers.findIndex(c => c.pi === p.i); const inp = inputs[ci] || {}; const m = Math.min(1, hyp(inp.mx || 0, inp.mz || 0)); const s = this.maxSpeed(p) * 0.6 * m; p.dvx = m > 0.05 ? inp.mx / m * s : 0; p.dvz = m > 0.05 ? inp.mz / m * s : 0; }
@@ -1522,7 +1528,11 @@ export class Match {
       // hold the ball at the taker
       if (sp.type === 'throwin') { b.x = taker.x; b.z = taker.z - Math.sign(taker.z) * 0.5; b.y = 2.1; b.vx = b.vy = b.vz = 0; }
       else if (sp.type === 'goalkick' && taker.isGK) { /* ball stays on the ground */ }
-      taker.x = sp.type === 'throwin' ? taker.x : taker.x; // fixed
+    }
+    if (taker && sp.pendingAct) {
+      const dist = Math.hypot(b.x - taker.x, b.z - taker.z);
+      if (dist < 0.7 || this.phaseT - sp.pendingAt > 2.5) { const a = sp.pendingAct; sp.pendingAct = null; sp.ranUp = true; this.executeSetPiece(a); }
+      return;
     }
     const minWait = sp.type === 'kickoff' ? 1.0 : sp.type === 'penalty' ? 1.6 : 1.2;
     if (this.phaseT < minWait) return;
@@ -1545,7 +1555,7 @@ export class Match {
           if (this.tapped(ci, inp, 'shoot') || (inp.shoot && !c.charging)) { c.charging = true; c.charge = Math.max(c.charge, 0.05); }
           if (c.charging) {
             if (inp.shoot) c.charge = Math.min(1.15, c.charge + dt / 0.95);
-            else { this.executeSetPiece({ act: 'shoot', ax, az, power: Math.max(0.3, c.charge), finesse: !!inp.finesse, aimZ: m > 0.25 ? clamp(inp.mz / Math.max(m, 0.5) * 3.2, -3.2, 3.2) : null }); c.charging = false; c.charge = 0; return; }
+            else { this.executeSetPiece({ act: 'shoot', ax, az, power: Math.max(0.3, c.charge), finesse: !!inp.finesse, aimZ: m > 0.25 ? clamp(inp.mz / Math.max(m, 0.5) * (sp.type === 'penalty' ? 2.7 : 3.2), -3.2, 3.2) : null }); c.charging = false; c.charge = 0; return; }
           }
         }
         for (const a of ['pass', 'through', 'lob']) if (this.tapped(ci, inp, a)) return this.executeSetPiece({ act: a, ax, az });
@@ -1588,12 +1598,20 @@ export class Match {
   executeSetPiece(a) {
     const sp = this.sp; const taker = this.players[sp.taker];
     const b = this.ball;
+    // everything except throw-ins starts with a short run-up to the ball
+    if (sp.type !== 'throwin' && !sp.ranUp && taker && Math.hypot(b.x - taker.x, b.z - taker.z) > 0.7) {
+      if (a.ax === undefined) a = { ...a };
+      sp.pendingAct = a; sp.pendingAt = this.phaseT;
+      return;
+    }
     this.phase = 'play'; this.phaseT = 0;
     for (const p of this.players) p.wall = false;
     b.owner = -1;
     const t = sp.team;
     let target = a.target;
     if (!target && a.ax !== undefined) target = this.pickPassTarget(taker, a.ax, a.az, a.act === 'lob' ? 'lob' : 'pass');
+    // nobody in the aimed direction: fall back to the best available team-mate instead of kicking into space
+    if (!target && a.act !== 'shoot' && a.act !== 'cross') target = this.aiSetPiece(sp, taker).target || null;
     if (sp.type === 'throwin') {
       b.y = 2.0; b.x = taker.x; b.z = taker.z - Math.sign(taker.z) * 0.5;
       if (!target) target = this.nearestTo(t, taker.x, taker.z, true, taker.i);
