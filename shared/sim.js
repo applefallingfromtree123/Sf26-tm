@@ -290,8 +290,14 @@ export class Match {
       p.dvx = dvx; p.dvz = dvz; p.sprinting = !!inp.sprint && mag > 0.1;
       if (hasBall && mag < 0.05) { p.dvx = 0; p.dvz = 0; }
     } else { p.dvx = p.vx * 0.9; p.dvz = p.vz * 0.9; }
-    // pass receiver assist: run onto the ball when the stick is idle
-    if (!busy && mag < 0.1 && b.owner < 0 && b.pass && b.pass.target === p.i) { const ip = this.interceptPoint(p); this.steerTo(p, ip[0], ip[1], 0.85); }
+    // pass receiver assist: the intended receiver automatically runs to meet the ball
+    // (right after the pass, when the stick is idle, or when the stick points roughly at the ball)
+    if (!busy && b.owner < 0 && b.pass && b.pass.target === p.i && b.pass.team === p.team) {
+      const ip = this.interceptPoint(p);
+      const dx = ip[0] - p.x, dz = ip[1] - p.z, dl = hyp(dx, dz) || 1;
+      const toward = mag > 0.1 ? (mx * dx + mz * dz) / (mag * dl) : 1;
+      if (this.realT - b.pass.t < 0.55 || mag < 0.1 || toward > 0.2) { this.steerTo(p, ip[0], ip[1], inp.sprint || dl > 4 ? 1 : 0.85, 6); p.sprinting = true; }
+    }
     if (p.isGK && hasBall) { p.dvx = 0; p.dvz = 0; p.holdT += dt; if (p.holdT > 6) { this.gkDistribute(p); return; } }
     // second-man press
     if (!teamHasBall && inp.through && b.owner >= 0) this.ctx.teamPress = c.team;
@@ -467,6 +473,12 @@ export class Match {
       if (this.ctx.chaser[t] === p.i || (b.pass && b.pass.target === p.i && b.pass.team === t)) {
         // run to intercept point
         const ip = this.interceptPoint(p);
+        if (b.pass && b.pass.target === p.i && b.pass.team === t) {
+          // intended receiver: sprint to meet the ball as early as possible instead of waiting for it
+          this.steerTo(p, ip[0], ip[1], 1, 6);
+          p.sprinting = true;
+          return;
+        }
         tx = ip[0]; tz = ip[1]; spd = 1;
       } else {
         const inPoss = b.pass ? b.pass.team === t : this.lastTouchTeam === t;
@@ -558,11 +570,11 @@ export class Match {
     return [l[0], l[2]];
   }
 
-  steerTo(p, tx, tz, spd) {
+  steerTo(p, tx, tz, spd, brake = 2.2) {
     p.tx = tx; p.tz = tz;
     const dx = tx - p.x, dz = tz - p.z, d = hyp(dx, dz);
     const max = this.maxSpeed(p) * spd;
-    const s = Math.min(max, d * 2.2);
+    const s = Math.min(max, d * brake);
     if (d < 0.15) { p.dvx = 0; p.dvz = 0; }
     else { p.dvx = dx / d * s; p.dvz = dz / d * s; }
     p.sprinting = spd > 0.8 && d > 3;
@@ -1104,7 +1116,7 @@ export class Match {
     } else if (['pass', 'through', 'lob', 'cross', 'throw', 'gk'].includes(kind)) {
       const exempt = this.sp && ['throwin', 'corner', 'goalkick'].includes(this.sp.type);
       const off = exempt ? [] : this.active(p.team).filter(q => q.i !== p.i && this.isOffside(q)).map(q => q.i);
-      b.pass = { team: p.team, from: p.i, target: extra.target ?? -1, off, fromFoot: kind !== 'throw' && !p.isGK };
+      b.pass = { team: p.team, from: p.i, target: extra.target ?? -1, off, fromFoot: kind !== 'throw' && !p.isGK, t: this.realT };
       p.st.passes++; this.stats[p.team].passes++;
       this.emit('pass', { p: p.i, kind, target: extra.target });
     }
