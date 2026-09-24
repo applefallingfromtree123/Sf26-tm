@@ -1463,7 +1463,9 @@ export class Match {
       if (taker) { taker.x = x - this.dir(team) * 1.2; taker.z = z; taker.face = this.dir(team) > 0 ? 0 : Math.PI; }
       this.emit('goalkick', { team });
     } else if (type === 'throwin') {
-      this.resetBall(x, z, 2.0);
+      // taker stands on the line; the ball is released just inside the field of play
+      const sz = Math.sign(z) || 1; z = sz * (HW + 0.2);
+      this.resetBall(x, sz * (HW - 0.3), 2.0);
       taker = this.nearestTo(team, x, z, true);
       if (taker) { taker.x = x; taker.z = z; taker.vx = taker.vz = 0; taker.face = Math.atan2(-Math.sign(z), 0.0001); }
       for (const p of this.active(1 - team)) if (hyp(p.x - x, p.z - z) < 2.5) { p.z -= Math.sign(z) * 2.5; }
@@ -1518,7 +1520,7 @@ export class Match {
     }
     if (taker) {
       // hold the ball at the taker
-      if (sp.type === 'throwin') { b.x = taker.x; b.z = taker.z; b.y = 2.1; }
+      if (sp.type === 'throwin') { b.x = taker.x; b.z = taker.z - Math.sign(taker.z) * 0.5; b.y = 2.1; b.vx = b.vy = b.vz = 0; }
       else if (sp.type === 'goalkick' && taker.isGK) { /* ball stays on the ground */ }
       taker.x = sp.type === 'throwin' ? taker.x : taker.x; // fixed
     }
@@ -1593,7 +1595,7 @@ export class Match {
     let target = a.target;
     if (!target && a.ax !== undefined) target = this.pickPassTarget(taker, a.ax, a.az, a.act === 'lob' ? 'lob' : 'pass');
     if (sp.type === 'throwin') {
-      b.y = 2.0; b.x = taker.x; b.z = taker.z;
+      b.y = 2.0; b.x = taker.x; b.z = taker.z - Math.sign(taker.z) * 0.5;
       if (!target) target = this.nearestTo(t, taker.x, taker.z, true, taker.i);
       const dx = target.x - b.x, dz = target.z - b.z, dist = hyp(dx, dz);
       const long = a.act === 'lob';
@@ -1625,7 +1627,7 @@ export class Match {
       if (target) this.groundPass(taker, target, a.act === 'through'); else this.groundTo(taker, taker.x + (a.ax ?? this.dir(t)) * 15, taker.z + (a.az ?? 0) * 15, null);
     }
     if (target) for (const c of this.controllers) if (c.team === t && c.lock < 0) c.pi = target.i;
-    this.emit('restart', { type: sp.type, team: t });
+    this.emit('restart', { kind: sp.type, team: t });
     this.sp = null;
   }
 
