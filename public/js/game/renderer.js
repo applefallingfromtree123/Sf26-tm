@@ -83,7 +83,7 @@ export class Renderer {
     key.castShadow = true;
     const q = (this.settings.quality ?? 1) >= 1;
     key.shadow.mapSize.set(q ? 4096 : 2048, q ? 4096 : 2048);
-    Object.assign(key.shadow.camera, { left: -70, right: 70, top: 50, bottom: -50, near: 10, far: 260 });
+    Object.assign(key.shadow.camera, { left: -64, right: 64, top: 42, bottom: -42, near: 10, far: 260 });
     key.shadow.bias = -0.0004; key.shadow.normalBias = 0.02;
     key.shadow.radius = 3;
     const fill = new THREE.DirectionalLight(night ? 0xcfd8ff : 0xffffff, night ? 0.9 : 0.4);
@@ -153,7 +153,7 @@ export class Renderer {
     if (this.menuMode || !snap) {
       // slow orbit inside the bowl (stays clear of the stands and roof)
       const a = this.time * 0.045;
-      this.camera.position.set(Math.cos(a) * 44, 14 + Math.sin(this.time * 0.1) * 3, Math.sin(a) * 26);
+      this.camera.position.set(Math.cos(a) * 52, 16 + Math.sin(this.time * 0.1) * 3, Math.sin(a) * 34);
       this.camera.fov = 50; this.camera.updateProjectionMatrix();
       this.camera.lookAt(-Math.cos(a) * 20, 6, -Math.sin(a) * 14);
       this.gl.render(this.scene, this.camera);
@@ -235,10 +235,10 @@ export class Renderer {
       fov = 45;
       this.camPos.lerp(pos, Math.min(1, dt * 2)); this.camLook.lerp(look, Math.min(1, dt * 3));
     } else { // broadcast: elevated main-stand camera that pans and tracks
-      pos = new THREE.Vector3(bx * 0.74, 23, 58 + bz * 0.08);
-      look = new THREE.Vector3(bx * 0.97, 0, bz * 0.6 + 1.5);
-      const distZ = 58 - bz * 0.6;
-      fov = 26 + (distZ - 58) * 0.12 + Math.abs(bx) * 0.02;
+      pos = new THREE.Vector3(bx * 0.7, 30, 70 + bz * 0.08);
+      look = new THREE.Vector3(bx * 0.96, 0, bz * 0.6 + 2);
+      const distZ = 70 - bz * 0.6;
+      fov = 33 + (distZ - 70) * 0.1 + Math.abs(bx) * 0.02;
       this.camPos.lerp(pos, Math.min(1, dt * 2.6)); this.camLook.lerp(look, Math.min(1, dt * 3.6));
     }
     cam.position.copy(this.camPos);

@@ -133,7 +133,7 @@ export function buildStadium(scene, renderer, opts = {}) {
   const away = new THREE.Color(opts.awayColor || '#1d428a');
 
   // ground (outer apron)
-  const apron = new THREE.Mesh(new THREE.PlaneGeometry(260, 220), new THREE.MeshStandardMaterial({ color: 0x1f5a24, roughness: 1 }));
+  const apron = new THREE.Mesh(new THREE.PlaneGeometry(320, 280), new THREE.MeshStandardMaterial({ color: 0x1f5a24, roughness: 1 }));
   apron.rotation.x = -Math.PI / 2; apron.position.y = -0.02; apron.receiveShadow = true;
   group.add(apron);
   // pitch
@@ -146,8 +146,8 @@ export function buildStadium(scene, renderer, opts = {}) {
   // running track / concrete rim around grass
   const rimMat = new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.9 });
   for (const s of [-1, 1]) {
-    const a = new THREE.Mesh(new THREE.PlaneGeometry(170, 8), rimMat); a.rotation.x = -Math.PI / 2; a.position.set(0, 0.005, s * (AZ / 2 + 4)); a.receiveShadow = true; group.add(a);
-    const b = new THREE.Mesh(new THREE.PlaneGeometry(8, AZ + 16), rimMat); b.rotation.x = -Math.PI / 2; b.position.set(s * (AX / 2 + 4), 0.005, 0); b.receiveShadow = true; group.add(b);
+    const a = new THREE.Mesh(new THREE.PlaneGeometry(210, 22), rimMat); a.rotation.x = -Math.PI / 2; a.position.set(0, 0.005, s * (AZ / 2 + 11)); a.receiveShadow = true; group.add(a);
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(22, AZ + 44), rimMat); b.rotation.x = -Math.PI / 2; b.position.set(s * (AX / 2 + 11), 0.005, 0); b.receiveShadow = true; group.add(b);
   }
 
   // stands
@@ -230,15 +230,16 @@ export function buildStadium(scene, renderer, opts = {}) {
   ribbonTex.repeat.set(3, 1);
   const glowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85 });
   const rowsL = quality >= 1 ? 24 : 16, rowsU = quality >= 1 ? 20 : 12;
-  placeStand(150, rowsL, rowsU, HW + 11, 0, false); // main stand (near camera, z+)
-  placeStand(150, rowsL, rowsU, HW + 11, Math.PI, false); // far side
-  placeStand(96, rowsL, rowsU, HL + 13, Math.PI / 2, true); // east end (away fans corner)
-  placeStand(96, rowsL, rowsU, HL + 13, -Math.PI / 2, false);
+  const SIDE = HW + 18, END = HL + 20; // distance from centre to the front of the stands
+  placeStand(176, rowsL, rowsU, SIDE, 0, false); // main stand (near camera, z+)
+  placeStand(176, rowsL, rowsU, SIDE, Math.PI, false); // far side
+  placeStand(118, rowsL, rowsU, END, Math.PI / 2, true); // east end (away fans corner)
+  placeStand(118, rowsL, rowsU, END, -Math.PI / 2, false);
   // corners
   for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    const len = 30;
+    const len = 38;
     const ang = Math.atan2(sx, sz);
-    const dist = Math.hypot(HL + 13, HW + 11) * 0.86;
+    const dist = Math.hypot(END, SIDE) * 0.86;
     placeCorner(len, ang, dist);
   }
   function placeCorner(length, rotY, dist) {
