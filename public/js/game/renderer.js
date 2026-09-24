@@ -239,7 +239,7 @@ export class Renderer {
       look = new THREE.Vector3(bx * 0.97, 0, bz * 0.6 + 1.5);
       const distZ = 58 - bz * 0.6;
       fov = 26 + (distZ - 58) * 0.12 + Math.abs(bx) * 0.02;
-      this.camPos.lerp(pos, Math.min(1, dt * 1.9)); this.camLook.lerp(look, Math.min(1, dt * 2.6));
+      this.camPos.lerp(pos, Math.min(1, dt * 2.6)); this.camLook.lerp(look, Math.min(1, dt * 3.6));
     }
     cam.position.copy(this.camPos);
     cam.lookAt(this.camLook);

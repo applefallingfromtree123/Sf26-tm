@@ -86,7 +86,7 @@ export class Match {
     return Math.abs(x - gx) <= PITCH.BOX_D && Math.abs(z) <= PITCH.BOX_W && Math.sign(x) === Math.sign(gx);
   }
   maxSpeed(p) {
-    const base = 5.7 + p.a.pac * 3.4;
+    const base = 6.4 + p.a.pac * 3.9; // brisk, arcade-leaning pace
     return base * (0.82 + 0.18 * p.stamina) * this.dmod(p.team, 'speed') * (p.ti === this.lockedTi(p.team) ? 1.02 : 1);
   }
   lockedTi(t) { const c = this.controllers.find(c => c.team === t && c.lock >= 0); return c ? c.lock : -99; }
@@ -274,8 +274,8 @@ export class Match {
     const mag = Math.min(1, hyp(mx, mz));
     const busy = p.state === STATE.slide || p.state === STATE.fallen || p.state === STATE.dive || p.stun > 0;
     if (!busy) {
-      let spd = this.maxSpeed(p) * (inp.sprint ? 1 : 0.64) * mag;
-      if (hasBall) spd *= inp.sprint ? 0.94 : 0.9;
+      let spd = this.maxSpeed(p) * (inp.sprint ? 1 : 0.74) * mag;
+      if (hasBall) spd *= inp.sprint ? 0.96 : 0.93;
       let dvx = mag > 0.05 ? (mx / mag) * spd : 0, dvz = mag > 0.05 ? (mz / mag) * spd : 0;
       // contain / pressure (hold pass while defending)
       if (!teamHasBall && inp.pass && b.owner >= 0 && mag < 0.1) {
@@ -462,7 +462,7 @@ export class Match {
     let tx, tz, spd = 0.55;
     const owner = b.owner >= 0 ? this.players[b.owner] : null;
     const think = this.realT >= p.next;
-    if (think) p.next = this.realT + 0.18 + this.r() * 0.12 + this.dmod(t, 'react') * 0.5;
+    if (think) p.next = this.realT + 0.13 + this.r() * 0.08 + this.dmod(t, 'react') * 0.4;
     if (!owner) {
       if (this.ctx.chaser[t] === p.i || (b.pass && b.pass.target === p.i && b.pass.team === t)) {
         // run to intercept point
@@ -611,7 +611,7 @@ export class Match {
     const spdF = spaceAhead > 8 ? 1 : spaceAhead > 4 ? 0.85 : 0.62;
     this.steerTo(p, p.x + ax / al * 6, p.z + az / al * 6, spdF);
     if (!think) return;
-    p.next = this.realT + 0.22 + this.r() * 0.1 + this.dmod(t, 'react');
+    p.next = this.realT + 0.16 + this.r() * 0.08 + this.dmod(t, 'react') * 0.8;
     const noise = this.dmod(t, 'noise');
     // --- shooting
     let best = { s: 0.32 + (1 - pressure) * 0.1 + p.a.dri * 0.12 + (spaceAhead > 6 ? 0.15 : 0) + (this.r() - 0.5) * noise, act: 'dribble' };
@@ -619,7 +619,7 @@ export class Match {
       const openAng = Math.atan2(GW * 2 * Math.abs(gx - p.x), (gx - p.x) ** 2 + p.z ** 2 - GW * GW);
       const blockers = this.laneOpen(t, p.x, p.z, gx, clamp(p.z * 0.2, -2, 2)) < 0.8 ? 1 : 0;
       const q = clamp(openAng * 2.2, 0, 1.2) * (1 - distGoal / 32) * (blockers ? 0.45 : 1) + p.a.sho * 0.12 + (distGoal < 11 ? 0.2 : 0);
-      const s = q * 1.3 + 0.22 + (distGoal < 16 ? 0.12 : 0) + (this.r() - 0.5) * noise;
+      const s = q * 1.3 + 0.3 + (distGoal < 18 ? 0.14 : 0) + (this.r() - 0.5) * noise;
       if (s > best.s && (distGoal < 24 || p.a.sho > 0.78)) best = { s, act: 'shoot' };
     }
     // --- passing options
@@ -804,7 +804,7 @@ export class Match {
     const sp = hyp(b.vx, b.vy, b.vz);
     if (b.shot) b.shot.saveTried = true;
     const gkr = (p.a.pac + p.a.dri + p.a.phy) / 3;
-    let pr = 0.8 + (gkr - 0.72) * 1.2 - Math.max(0, sp - 24) * 0.02 - (d / reach) ** 2 * 0.32 + (this.isCPU(p.team) ? DIFF.gk[this.difficulty] : 0);
+    let pr = 0.74 + (gkr - 0.72) * 1.2 - Math.max(0, sp - 24) * 0.02 - (d / reach) ** 2 * 0.32 + (this.isCPU(p.team) ? DIFF.gk[this.difficulty] : 0);
     if (!b.shot) pr += 0.25;
     pr = clamp(pr, 0.1, 0.97);
     if (this.dbg) this.dbg.push({ pr, d, reach, sp, diving });
@@ -855,7 +855,7 @@ export class Match {
     else if (p.state === STATE.dive) { p.vx *= 1 - 3 * dt; p.vz *= 1 - 2.2 * dt; }
     else if (p.state === STATE.fallen) { p.vx *= 1 - 6 * dt; p.vz *= 1 - 6 * dt; }
     else {
-      const acc = (6 + p.a.pac * 5) * dt;
+      const acc = (11 + p.a.pac * 7) * dt;
       let ex = dvx - p.vx, ez = dvz - p.vz;
       const el = hyp(ex, ez);
       if (el > acc) { ex = ex / el * acc; ez = ez / el * acc; }
@@ -871,7 +871,7 @@ export class Match {
       if (sp > 0.4) {
         const want = Math.atan2(p.vz, p.vx);
         const hasBall = this.ball.owner === p.i;
-        const rate = (hasBall ? 5 + p.a.dri * 6 : 9) - Math.min(4, sp * 0.3);
+        const rate = (hasBall ? 7.5 + p.a.dri * 8 : 13) - Math.min(4, sp * 0.3);
         const da = angDiff(p.face, want);
         p.face += clamp(da, -rate * dt, rate * dt);
       } else if (this.ball.owner !== p.i) {
@@ -918,7 +918,7 @@ export class Match {
       }
       const off = 0.42 + sp * 0.055 + Math.max(0, Math.sin(b.dribPh)) * sp * 0.035 + (p.skillT > 0 ? 0.25 : 0);
       const tx = p.x + Math.cos(p.face) * off, tz = p.z + Math.sin(p.face) * off;
-      const k = Math.min(1, dt * (10 + p.a.dri * 12));
+      const k = Math.min(1, dt * (14 + p.a.dri * 14));
       const nx = b.x + (tx - b.x) * k, nz = b.z + (tz - b.z) * k;
       b.vx = (nx - b.x) / dt; b.vz = (nz - b.z) / dt; b.vy = 0;
       b.x = nx; b.z = nz; b.y = BR;
@@ -1118,8 +1118,8 @@ export class Match {
       const d = this.dir(p.team);
       tx = q.x + q.vx * tEst * 1.2 + d * (5 + dist0 * 0.1); tz = q.z + q.vz * tEst * 1.2; vEnd = 3.2;
       tx = clamp(tx, -HL + 1, HL - 1); tz = clamp(tz, -HW + 1, HW - 1);
-      vEnd = 5.5;
-    } else { tx = q.x + q.vx * tEst * 0.8; tz = q.z + q.vz * tEst * 0.8; vEnd = clamp(6 + dist0 * 0.16, 6.5, 11.5); }
+      vEnd = 7;
+    } else { tx = q.x + q.vx * tEst * 0.8; tz = q.z + q.vz * tEst * 0.8; vEnd = clamp(8 + dist0 * 0.18, 8.5, 14); }
     this.groundTo(p, tx, tz, q, vEnd, kind || (through ? 'through' : 'pass'));
   }
   groundTo(p, tx, tz, q, vEnd = 5, kind = 'pass') {
@@ -1168,9 +1168,9 @@ export class Match {
     const t = p.team, gx = this.goalX(t);
     power = clamp(power, 0.1, 1.15);
     const dist = hyp(gx - p.x, aimZ - p.z);
-    let speed = (14 + power * 18) * (0.84 + p.a.sho * 0.22);
+    let speed = (16 + power * 19) * (0.84 + p.a.sho * 0.22);
     if (finesse) speed *= 0.8;
-    speed = Math.min(speed, 36);
+    speed = Math.min(speed, 38);
     let yT = 0.35 + power * 1.05 + (power > 0.9 ? (power - 0.9) * 7 : 0);
     if (dist < 9) yT *= 0.75;
     const tt = dist / speed * (1 + dist * 0.006);
