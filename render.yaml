@@ -1,0 +1,27 @@
+# Render Blueprint for SF2027
+# 1) Push this repo to GitHub  2) Render dashboard → New → Blueprint → select the repo.
+# Creates the Node web service (game + REST API + Socket.io online server) and a
+# PostgreSQL database for accounts / career saves / online rankings.
+services:
+  - type: web
+    name: sf2027
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sf2027-db
+          property: connectionString
+
+databases:
+  - name: sf2027-db
+    plan: free
+    databaseName: sf2027
+    user: sf2027

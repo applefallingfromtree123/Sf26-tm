@@ -1,0 +1,25 @@
+{
+  "name": "sf2027",
+  "version": "1.0.0",
+  "description": "SF2027 - realistic 3D browser football game (Kick-off, Manager Career, Player Career, Online)",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node test/sim.test.js && node test/online.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.23.0",
+    "socket.io": "^4.8.3",
+    "three": "^0.186.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

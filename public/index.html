@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SF2027</title>
+  <meta name="description" content="SF2027 — 3D 축구 게임: 킥오프, 감독 커리어, 선수 커리어, 온라인 대전">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23fff'/%3E%3Cpath d='M32 14l10 7-4 12H26l-4-12z' fill='%23111'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/build/three.module.js", "three/addons/": "/vendor/three/examples/jsm/" } }
+  </script>
+</head>
+<body>
+  <canvas id="gl"></canvas>
+  <div id="vignette"></div>
+  <div id="hud" class="hidden"></div>
+  <div id="ui"></div>
+  <div id="toast"></div>
+  <div id="boot">
+    <div class="boot-logo">SF<span>2027</span></div>
+    <div class="boot-bar"><i></i></div>
+    <div class="boot-msg">경기장을 준비하는 중...</div>
+  </div>
+  <noscript>SF2027을 플레이하려면 JavaScript가 필요합니다.</noscript>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
