@@ -158,7 +158,7 @@ async function playRound(app, save, play) {
     const mk = (id) => id === save.clubId ? buildTeam(id, { players: save.squad, formation: save.formation, lineup: save.lineup }) : buildTeam(id, { players: squadOf(save, id) });
     const home = mk(fx.h), away = mk(fx.a);
     const kits = kitColors(home.club, away.club);
-    const res = await app.playMatch({ home, away, kits, difficulty: save.difficulty, humans: [{ slot: 0, team: userHome ? 0 : 1 }] });
+    const res = await app.playMatch({ home, away, kits, difficulty: save.difficulty, humans: [{ slot: 0, team: userHome ? 0 : 1 }], quitWarning: '경기에서 나가면 0-3 몰수패로 처리됩니다. 나가시겠습니까?' });
     if (!res || res.aborted) {
       gh = userHome ? 0 : 3; ga = userHome ? 3 : 0;
       news.push({ t: `경기를 포기하여 <b>0-3 몰수패</b> 처리되었습니다.` });

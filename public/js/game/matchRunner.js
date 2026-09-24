@@ -1,6 +1,6 @@
 // Drives a match: local (engine in the browser) or online (server snapshots).
 import { Match } from '/shared/sim.js';
-import { modal, esc } from '../ui/dom.js';
+import { modal, esc, confirmBox } from '../ui/dom.js';
 import { CONTROLS_HTML } from './input.js';
 
 const STEP = 1 / 60;
@@ -36,7 +36,7 @@ export class MatchRunner {
     R.setStadiumColors(home.club.c1, home.club.c2, kits.away[0], kits.away[1]);
     R.setMenuMode(false);
     R.setTeams(home, away, kits);
-    this.app.hud.show([home, away], kits, { online: this.online });
+    this.app.hud.show([home, away], kits, { online: this.online, onMenu: () => this.app.input.emit('pause'), onQuit: () => this.app.input.emit('quit') });
     this.app.audio.ensure();
     this.app.audio.setCrowd(0.22, 0.04);
     this.spike = 0;
@@ -107,9 +107,17 @@ export class MatchRunner {
       });
       I.on('camera', () => this.cycleCamera());
       I.on('skip', () => { if (replay) { replay = null; H.replay(false); resumeSync(); } });
+      let quitting = false;
+      I.on('quit', async () => {
+        if (endShown || quitting) return;
+        quitting = true; pauseModal?.close(); paused = true;
+        const ok = await confirmBox(cfg.quitWarning || '경기에서 나가시겠습니까? 진행 상황은 저장되지 않습니다.', '나가기');
+        quitting = false;
+        if (ok) finish({ aborted: true }); else { paused = false; last = performance.now(); resumeSync(); }
+      });
       const finish = (res) => {
         if (done) return; done = true;
-        I.on('pause', null); I.on('camera', null); I.on('skip', null);
+        I.on('pause', null); I.on('camera', null); I.on('skip', null); I.on('quit', null);
         H.hide(); R.setMenuMode(true);
         resolve(res);
       };
@@ -212,10 +220,14 @@ export class MatchRunner {
       });
       I.on('camera', () => this.cycleCamera());
       I.on('skip', () => { if (replay) { replay = null; H.replay(false); } });
+      I.on('quit', async () => {
+        if (endData) return;
+        if (await confirmBox('경기에서 나가면 기권패로 처리됩니다. 나가시겠습니까?', '기권하고 나가기')) socket.emit('room:leave');
+      });
       const finish = (res) => {
         if (done) return; done = true;
         socket.off('snap', onSnap); socket.off('match:end', onEnd); socket.off('disconnect', onDisc);
-        I.on('pause', null); I.on('camera', null); I.on('skip', null);
+        I.on('pause', null); I.on('camera', null); I.on('skip', null); I.on('quit', null);
         H.hide(); R.setMenuMode(true);
         resolve(res);
       };

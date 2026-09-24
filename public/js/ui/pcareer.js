@@ -144,7 +144,7 @@ async function playRound(app, save, play) {
     const mk = (id) => id === save.clubId ? buildTeam(id, { players: mine.players, formation: mine.formation, lineup: mine.lineup }) : buildTeam(id);
     const H = mk(fx.h), A = mk(fx.a);
     // keep my name on the shirt
-    const res = await app.playMatch({ home: H, away: A, kits: kitColors(H.club, A.club), difficulty: save.difficulty, humans: [{ slot: 0, team: home ? 0 : 1, lock: mine.lockTi }], camera: app.settings.camera, highlightId: 'me' });
+    const res = await app.playMatch({ home: H, away: A, kits: kitColors(H.club, A.club), difficulty: save.difficulty, humans: [{ slot: 0, team: home ? 0 : 1, lock: mine.lockTi }], camera: app.settings.camera, highlightId: 'me', quitWarning: '경기에서 나가면 패배 처리되고 평점 5.0이 기록됩니다. 나가시겠습니까?' });
     if (!res || res.aborted) { gh = home ? 0 : 1; ga = home ? 1 : 0; myR = 5.0; save.news.push({ t: '경기를 중도 포기했습니다. 감독의 신뢰가 떨어졌습니다.' }); }
     else {
       [gh, ga] = res.score;

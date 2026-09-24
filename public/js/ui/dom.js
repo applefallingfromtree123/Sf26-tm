@@ -25,8 +25,8 @@ export function modal(html, { onClose, dismiss = true } = {}) {
 export function confirmBox(text, okLabel = '확인') {
   return new Promise((res) => {
     const m = modal(`<h2>확인</h2><p class="lead">${esc(text)}</p><div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn ghost" data-no>취소</button><button class="btn primary" data-yes>${esc(okLabel)}</button></div>`, { onClose: () => res(false) });
-    m.el.querySelector('[data-yes]').onclick = () => { m.close(); res(true); };
-    m.el.querySelector('[data-no]').onclick = () => { m.close(); res(false); };
+    m.el.querySelector('[data-yes]').onclick = () => { res(true); m.close(); };
+    m.el.querySelector('[data-no]').onclick = () => { res(false); m.close(); };
   });
 }
 

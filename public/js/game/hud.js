@@ -48,9 +48,12 @@ export class Hud {
       <div id="h-banner"></div>
       <div id="h-card"></div>
       <div class="replay-tag hidden" id="h-replay">REPLAY</div>
+      <div class="hud-btns"><button class="btn sm" id="h-menu">☰ 메뉴</button><button class="btn sm danger" id="h-quit">나가기</button></div>
       <div id="h-over"></div>`;
     this.$ = (id) => this.root.querySelector('#' + id);
     this.radar = this.$('h-radar').getContext('2d');
+    this.$('h-menu').onclick = (e) => { e.currentTarget.blur(); opts.onMenu && opts.onMenu(); };
+    this.$('h-quit').onclick = (e) => { e.currentTarget.blur(); opts.onQuit && opts.onQuit(); };
   }
   hide() { this.root.classList.add('hidden'); this.root.innerHTML = ''; }
 
