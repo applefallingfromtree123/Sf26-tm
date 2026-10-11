@@ -43,6 +43,7 @@ export function mainMenu(app) {
     <div class="menu-wrap">
       <div class="menu-tiles">
         <div class="tile big" data-go="kickoff"><div class="t-ico">⚽</div><div class="t-name">킥오프</div><div class="t-desc">전 세계 ${ALL_CLUBS.length}개 클럽으로 바로 한 판! 90분 경기 · 실제 플레이 12분</div></div>
+        <div class="tile sc-tile" data-go="superclass"><div class="t-ico">🎴</div><div class="t-name">SUPER CLASS</div><div class="t-desc">카드 팩을 열어 드림팀 구성 · 레벨업으로 더 좋은 팩 해금 · 로컬/온라인 대전</div></div>
         <div class="tile" data-go="online"><div class="t-ico">🌐</div><div class="t-name">온라인</div><div class="t-desc">실시간 1:1 매치메이킹 · 친선방 · 랭킹</div></div>
         <div class="tile" data-go="career"><div class="t-ico">📋</div><div class="t-name">감독 커리어</div><div class="t-desc">팀을 맡아 리그 우승에 도전. 이적시장 · 전술 · 시즌 진행</div></div>
         <div class="tile" data-go="pcareer"><div class="t-ico">🏃</div><div class="t-name">선수 커리어</div><div class="t-desc">나만의 선수를 만들어 월드클래스로 성장</div></div>

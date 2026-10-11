@@ -6,6 +6,7 @@ import { buildTeam } from '../shared/squad.js';
 import { CLUB_BY_ID } from '../shared/data/leagues.js';
 import { verifyToken } from './auth.js';
 import { publicUser } from './store.js';
+import { loadScTeam, applyOnlineResult } from './superclass.js';
 
 const TICK_MS = 50, STEPS = 3, DT = 1 / 60;
 
@@ -31,33 +32,40 @@ export function setupOnline(io, store) {
   io.on('connection', (socket) => {
     socket.emit('lobby', lobbyInfo());
 
-    socket.on('queue:join', ({ clubId } = {}) => {
-      if (!CLUB_BY_ID[clubId] || socketRoom.has(socket.id)) return;
+    // mode: 'club' (pick a real club) | 'sc' (Super Class card squad)
+    const modeOf = (m) => (m === 'sc' ? 'sc' : 'club');
+    const validEntry = (mode, clubId) => mode === 'sc' || !!CLUB_BY_ID[clubId];
+    socket.on('queue:join', ({ clubId, mode } = {}) => {
+      mode = modeOf(mode);
+      if (!validEntry(mode, clubId) || socketRoom.has(socket.id)) return;
       leaveQueue(socket);
-      // avoid pairing a user with themselves (two tabs)
-      const idx = queue.findIndex(q => q.socket.data.username !== socket.data.username);
+      // avoid pairing a user with themselves (two tabs); only pair the same mode
+      const idx = queue.findIndex(q => q.mode === mode && q.socket.data.username !== socket.data.username);
       if (idx >= 0) {
         const other = queue.splice(idx, 1)[0];
-        startRoom(createRoom(false), [other, { socket, clubId }]);
+        startRoom(createRoom(false, mode), [other, { socket, clubId }]);
       } else {
-        queue.push({ socket, clubId });
+        queue.push({ socket, clubId, mode });
         socket.emit('queue:waiting', { position: queue.length });
       }
     });
     socket.on('queue:leave', () => leaveQueue(socket));
 
-    socket.on('room:create', ({ clubId } = {}) => {
-      if (!CLUB_BY_ID[clubId] || socketRoom.has(socket.id)) return;
+    socket.on('room:create', ({ clubId, mode } = {}) => {
+      mode = modeOf(mode);
+      if (!validEntry(mode, clubId) || socketRoom.has(socket.id)) return;
       leaveQueue(socket);
-      const room = createRoom(true);
+      const room = createRoom(true, mode);
       room.waiting = { socket, clubId };
       socketRoom.set(socket.id, room.id);
       socket.emit('room:created', { code: room.code });
     });
-    socket.on('room:join', ({ code, clubId } = {}) => {
-      if (!CLUB_BY_ID[clubId] || socketRoom.has(socket.id)) return;
+    socket.on('room:join', ({ code, clubId, mode } = {}) => {
+      mode = modeOf(mode);
+      if (!validEntry(mode, clubId) || socketRoom.has(socket.id)) return;
       const room = [...rooms.values()].find(r => r.code && r.code === String(code || '').toUpperCase() && r.waiting && !r.match);
       if (!room) return socket.emit('room:error', { message: '방을 찾을 수 없습니다.' });
+      if (room.mode !== mode) return socket.emit('room:error', { message: room.mode === 'sc' ? 'SUPER CLASS 전용 방입니다. SUPER CLASS 모드에서 참가하세요.' : '일반 온라인 방입니다. 온라인 메뉴에서 참가하세요.' });
       if (room.waiting.socket.data.username === socket.data.username) return socket.emit('room:error', { message: '자기 자신과는 대결할 수 없습니다.' });
       leaveQueue(socket);
       const host = room.waiting; room.waiting = null;
@@ -95,25 +103,34 @@ export function setupOnline(io, store) {
 
   function leaveQueue(socket) { const i = queue.findIndex(q => q.socket.id === socket.id); if (i >= 0) queue.splice(i, 1); }
 
-  function createRoom(priv) {
+  function createRoom(priv, mode = 'club') {
     const id = `r${roomSeq++}`;
     let code = null;
     if (priv) { do { code = Math.random().toString(36).slice(2, 7).toUpperCase(); } while ([...rooms.values()].some(r => r.code === code)); }
-    const room = { id, code, players: [], inputs: [{}, {}], match: null, timer: null, over: false };
+    const room = { id, code, mode, players: [], inputs: [{}, {}], match: null, timer: null, over: false };
     rooms.set(id, room);
     return room;
   }
 
-  function startRoom(room, entries) {
+  async function startRoom(room, entries) {
     room.players = entries.map((e, team) => ({ socket: e.socket, clubId: e.clubId, team, username: e.socket.data.username, nickname: e.socket.data.nickname }));
     for (const p of room.players) socketRoom.set(p.socket.id, room.id);
-    const home = buildTeam(room.players[0].clubId), away = buildTeam(room.players[1].clubId);
+    let home, away;
+    if (room.mode === 'sc') {
+      room.starting = true;
+      try { [home, away] = await Promise.all(room.players.map(p => loadScTeam(store, p.username))); } catch (e) { console.error('[online] sc team', e); }
+      room.starting = false;
+      if (room.cancelled || !home || !away || room.players.some(p => !p.socket.connected)) {
+        for (const p of room.players) { socketRoom.delete(p.socket.id); if (p.socket.connected) p.socket.emit('room:error', { message: '상대가 나가서 경기가 취소되었습니다.' }); }
+        rooms.delete(room.id); return;
+      }
+    } else { home = buildTeam(room.players[0].clubId); away = buildTeam(room.players[1].clubId); }
     const seed = (Math.random() * 1e9) | 0;
     room.match = new Match({ home, away, controllers: [{ team: 0 }, { team: 1 }], difficulty: 2, seed, allowSkip: false });
     for (const p of room.players) {
       p.socket.emit('match:start', {
         home, away, you: p.team, seed,
-        names: room.players.map(q => q.nickname),
+        names: room.players.map(q => q.nickname), mode: room.mode,
         realSeconds: room.match.realSeconds,
       });
     }
@@ -148,7 +165,10 @@ export function setupOnline(io, store) {
     }
     const [u0, u1] = await Promise.all(room.players.map(p => store.getUser(p.username).catch(() => null)));
     const deltas = [0, 0];
-    if (u0 && u1) {
+    const scRewards = [null, null];
+    if (room.mode === 'sc') {
+      for (const p of room.players) scRewards[p.team] = await applyOnlineResult(store, p.username, score[p.team], score[1 - p.team]).catch(e => { console.error('[online] sc reward', e); return null; });
+    } else if (u0 && u1) {
       const r0 = u0.rating ?? 1000, r1 = u1.rating ?? 1000;
       const e0 = 1 / (1 + 10 ** ((r1 - r0) / 400));
       const s0 = score[0] > score[1] ? 1 : score[0] < score[1] ? 0 : 0.5;
@@ -165,14 +185,15 @@ export function setupOnline(io, store) {
     }
     for (const p of room.players) {
       const u = await store.getUser(p.username).catch(() => null);
-      if (p.socket.connected) p.socket.emit('match:end', { ...res, score, forfeitBy, ratingDelta: deltas[p.team], you: p.team, user: u ? publicUser(u) : null });
+      if (p.socket.connected) p.socket.emit('match:end', { ...res, score, forfeitBy, ratingDelta: deltas[p.team], mode: room.mode, scReward: scRewards[p.team], you: p.team, user: u ? publicUser(u) : null });
       socketRoom.delete(p.socket.id);
     }
     rooms.delete(room.id);
   }
 
   function abandon(room, socket) {
-    if (!room.match) { // waiting private room
+    if (!room.match) { // waiting private room (or an SC room still loading squads)
+      if (room.starting) { room.cancelled = true; return; }
       socketRoom.delete(socket.id); rooms.delete(room.id); return;
     }
     const team = room.players.findIndex(p => p.socket.id === socket.id);

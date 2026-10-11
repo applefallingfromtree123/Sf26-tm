@@ -205,11 +205,14 @@ export function pickLineup(players, formation = '4-3-3', fixed = null) {
 // Build a match team object used by the simulation
 export function buildTeam(clubId, opts = {}) {
   const club = CLUB_BY_ID[clubId];
-  const players = opts.players || generateSquad(clubId);
-  const formation = opts.formation || '4-3-3';
-  const { xi, bench, slots } = pickLineup(players, formation, opts.lineup);
+  return buildTeamFrom(club, opts.players || generateSquad(clubId), opts.formation, opts.lineup);
+}
+// build a match team from any club-like object and player list (used by Super Class squads)
+export function buildTeamFrom(club, players, formation = '4-3-3', lineup = null) {
+  formation = FORMATIONS[formation] ? formation : '4-3-3';
+  const { xi, bench, slots } = pickLineup(players, formation, lineup);
   return {
-    club: { id: club.id, name: club.name, short: club.short, c1: club.c1, c2: club.c2, stadium: club.stadium },
+    club: { id: club.id, name: club.name, short: club.short, c1: club.c1, c2: club.c2, stadium: club.stadium || `${club.name} Arena` },
     formation, slots: slots.map(s => ({ pos: s[0], d: s[1], w: s[2] })),
     xi: xi.map(p => ({ id: p.id, name: p.name, pos: p.pos, num: p.num, ovr: p.ovr, attrs: p.attrs, nat: p.nat, skin: skinFor(p) })),
     bench: bench.map(p => ({ id: p.id, name: p.name, pos: p.pos, num: p.num, ovr: p.ovr, attrs: p.attrs, nat: p.nat, skin: skinFor(p) })),

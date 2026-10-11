@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import { createStore, publicUser } from './store.js';
 import { hashPassword, verifyPassword, signToken, verifyToken, rateLimit } from './auth.js';
 import { setupOnline } from './online.js';
+import { setupSuperClassRoutes } from './superclass.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -92,6 +93,8 @@ app.delete('/api/saves/:slot', auth, wrap(async (req, res) => {
   await store.deleteSave(req.username, req.params.slot);
   res.json({ ok: true });
 }));
+
+setupSuperClassRoutes(app, store, auth, wrap);
 
 app.get('/api/leaderboard', wrap(async (req, res) => res.json({ users: await store.leaderboard(50) })));
 

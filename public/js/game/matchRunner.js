@@ -289,7 +289,9 @@ export class MatchRunner {
             const res = endData;
             const won = res.score[you] > res.score[1 - you], draw = res.score[0] === res.score[1];
             const title = res.forfeitBy !== null && res.forfeitBy !== undefined ? (res.forfeitBy === you ? '기권패' : '상대 기권 — 승리!') : won ? '승리!' : draw ? '무승부' : '패배';
-            const extra = `<div style="text-align:center;margin-top:10px;font-size:18px">레이팅 <b class="${res.ratingDelta >= 0 ? 'accent' : 'danger'}">${res.ratingDelta >= 0 ? '+' : ''}${res.ratingDelta}</b>${res.user ? ` → ${res.user.rating}` : ''}</div>`;
+            const sr = res.scReward;
+            const extra = sr ? `<div style="text-align:center;margin-top:10px;font-size:18px">SUPER CLASS 보상 <b class="accent">+${sr.reward.xp} XP</b> · <b class="gold">+${sr.reward.coins} 🪙</b> · RP ${sr.reward.rp >= 0 ? '+' : ''}${sr.reward.rp}${sr.levelUps?.length ? ` · <b class="gold">LEVEL UP! Lv.${sr.level}</b>` : ''}</div>`
+              : `<div style="text-align:center;margin-top:10px;font-size:18px">레이팅 <b class="${res.ratingDelta >= 0 ? 'accent' : 'danger'}">${res.ratingDelta >= 0 ? '+' : ''}${res.ratingDelta}</b>${res.user ? ` → ${res.user.rating}` : ''}</div>`;
             setTimeout(() => {
               const el = H.overlay(H.statsPanel(title, res, extra, '<button class="btn primary" id="h-cont">로비로</button>'));
               el.querySelector('#h-cont').onclick = () => finish(res);

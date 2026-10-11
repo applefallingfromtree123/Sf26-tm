@@ -12,7 +12,7 @@ function loadSocketIo() {
     document.head.appendChild(s);
   });
 }
-async function connect(app) {
+export async function connect(app) {
   await loadSocketIo();
   if (socket && socket.connected) return socket;
   if (socket) socket.disconnect();
