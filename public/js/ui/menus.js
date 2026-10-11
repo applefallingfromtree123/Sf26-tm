@@ -75,6 +75,7 @@ export function kickoffSetup(app, pre = {}) {
       <label class="fld">난이도<select class="inp" id="diff">${DIFFS.map((d, i) => `<option value="${i}">${d}</option>`).join('')}</select></label>
       <label class="fld">시간대<select class="inp" id="night"><option value="1">야간 (조명)</option><option value="0">주간</option></select></label>
       <span class="spacer"></span>
+      <button class="btn purple" data-go="cup" style="font-size:17px;padding:14px 22px">🏆 컵 대회</button>
       <button class="btn primary" id="go" style="font-size:20px;padding:14px 34px">킥오프!</button>
     </div></div>`);
   bindGo(app, root);

@@ -10,6 +10,7 @@ import * as career from './ui/career.js';
 import * as pcareer from './ui/pcareer.js';
 import * as online from './ui/online.js';
 import * as superclass from './ui/superclass.js';
+import * as cupui from './ui/cupui.js';
 import { toast } from './ui/dom.js';
 import { TouchControls, detectDevice } from './game/touch.js';
 
@@ -47,7 +48,7 @@ const app = {
   go(name, ...args) {
     const screens = {
       main: menus.mainMenu, kickoff: menus.kickoffSetup, settings: menus.settingsScreen, account: menus.accountScreen,
-      career: career.careerEntry, pcareer: pcareer.playerCareerEntry, online: online.onlineLobby, superclass: superclass.superClassEntry,
+      career: career.careerEntry, pcareer: pcareer.playerCareerEntry, online: online.onlineLobby, superclass: superclass.superClassEntry, cup: cupui.kickoffCupEntry,
     };
     const fn = screens[name];
     if (!fn) return;

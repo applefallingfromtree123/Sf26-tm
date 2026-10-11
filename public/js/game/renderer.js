@@ -1,7 +1,7 @@
 // Three.js renderer: scene/lighting, stadium, 22 players + ball driven by engine snapshots.
 import * as THREE from 'three';
 import { buildStadium, buildSky } from './stadium.js';
-import { createPlayer, animatePlayer, makeKitMaterials, makeIndicator, makeLabel } from './playerModel.js';
+import { createPlayer, animatePlayer, makeKitMaterials, makeIndicator, makeLabel, disposePlayer } from './playerModel.js';
 
 const GK_KITS = [['#1fd26a', '#0b3d22'], ['#ffd400', '#222222'], ['#ff4fa3', '#2a0a1a'], ['#00c2ff', '#08263a'], ['#ff7a00', '#221100'], ['#9b5cff', '#1b1033']];
 
@@ -115,8 +115,8 @@ export class Renderer {
   }
 
   clearTeams() {
-    for (const p of this.players) this.scene.remove(p);
-    this.players = [];
+    for (const p of [...this.players, ...(this.officials || [])]) { this.scene.remove(p); disposePlayer(p); }
+    this.players = []; this.officials = [];
     this.indicator.visible = false; this.indicator2.visible = false; this.label.visible = false;
   }
   // teams: [home, away] built teams; kits: {home:[c1,c2], away:[c1,c2]}
@@ -128,18 +128,58 @@ export class Renderer {
     const k0 = makeKitMaterials(kits.home[0], kits.home[1], kits.home[0]);
     const k1 = makeKitMaterials(kits.away[0], kits.away[1], kits.away[0]);
     const g0 = makeKitMaterials(gkA[0], gkA[1], gkA[0]), g1 = makeKitMaterials(gkB[0], gkB[1], gkB[0]);
-    const numCol = (hex) => { const c = new THREE.Color(hex); return (c.r * 0.3 + c.g * 0.59 + c.b * 0.11) > 0.6 ? '#111111' : '#ffffff'; };
+    this.kitMats = [[k0, g0], [k1, g1]];
     [home, away].forEach((tm, t) => {
       tm.xi.forEach((info, i) => {
-        const gk = tm.slots[i].pos === 'GK';
-        const kit = gk ? (t ? g1 : g0) : (t ? k1 : k0);
-        const shirtHex = gk ? (t ? gkB[0] : gkA[0]) : (t ? kits.away[0] : kits.home[0]);
-        const m = createPlayer({ ...info, pos: tm.slots[i].pos }, kit, { gk, shadows, shirtHex, numColor: numCol(shirtHex) });
+        const m = this.makePlayerModel(t, info, tm.slots[i].pos === 'GK', tm.club);
         this.scene.add(m);
         this.players.push(m);
       });
     });
     this.kits = kits;
+    // match officials: referee + two assistants
+    const refKit = makeKitMaterials('#ff7a1a', '#151515', '#151515');
+    this.officials = [0, 1, 2].map(k => {
+      const o = createPlayer({ id: 'ref' + k, name: k ? 'AR' : 'REF', num: '', skin: k % 3 }, refKit, { shadows, clubId: 'ref', clubShort: '', hi: (this.settings.quality ?? 1) >= 1 });
+      o.userData.ref = { x: 0, z: k === 0 ? 8 : k === 1 ? -(34 + 1.2) : 34 + 1.2, vx: 0, vz: 0, face: 0 };
+      this.scene.add(o); return o;
+    });
+  }
+  makePlayerModel(team, info, gk, club) {
+    const [kit, gkKit] = this.kitMats[team];
+    return createPlayer({ ...info }, gk ? gkKit : kit, { gk, shadows: this.settings.shadows !== false, clubId: club?.id, clubShort: club?.short, hi: (this.settings.quality ?? 1) >= 1 });
+  }
+  // substitution: rebuild one player's model with the new player's name/number
+  replacePlayer(i, info, team, gk) {
+    const old = this.players[i]; if (!old) return;
+    const m = this.makePlayerModel(team, info, gk, this.teams?.[team]?.club);
+    m.position.copy(old.position); m.rotation.copy(old.rotation);
+    this.scene.remove(old); disposePlayer(old);
+    this.scene.add(m); this.players[i] = m;
+  }
+  updateOfficials(dt, snap) {
+    if (!this.officials?.length) return;
+    const [bx, , bz] = snap.b;
+    const P = snap.p;
+    // second-to-last defender lines for each half (for the assistants)
+    const lineFor = (side) => { const xs = []; for (let i = 0; i < 22; i++) { const x = P[i * 7]; if (P[i * 7 + 4] !== -1 && Math.sign(x) === side) xs.push(Math.abs(x)); } xs.sort((a, b) => b - a); return side * Math.max(Math.abs(bx) * (Math.sign(bx) === side ? 1 : 0), xs[1] ?? 20); };
+    const targets = [
+      [bx - Math.sign(bx || 1) * 9, bz * 0.55 + (bz > 0 ? -9 : 9)],
+      [Math.max(0, lineFor(1)), -(34 + 1.2)],
+      [Math.min(0, lineFor(-1)), 34 + 1.2],
+    ];
+    this.officials.forEach((o, k) => {
+      const r = o.userData.ref, [tx, tz] = targets[k];
+      const dx = tx - r.x, dz = tz - r.z, d = Math.hypot(dx, dz);
+      const sp = Math.min(7.5, d * 1.6);
+      if (d > 0.3) { r.vx += ((dx / d) * sp - r.vx) * Math.min(1, dt * 4); r.vz += ((dz / d) * sp - r.vz) * Math.min(1, dt * 4); } else { r.vx *= 0.8; r.vz *= 0.8; }
+      r.x += r.vx * dt; r.z += r.vz * dt;
+      const v = Math.hypot(r.vx, r.vz);
+      const want = v > 0.6 ? Math.atan2(r.vz, r.vx) : Math.atan2(bz - r.z, bx - r.x);
+      let da = want - r.face; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2;
+      r.face += da * Math.min(1, dt * 6);
+      animatePlayer(o, r.x, r.z, r.face, v, 0, 0, 1, dt, this.time);
+    });
   }
 
   setMenuMode(on) { this.menuMode = on; if (on) { this.clearTeams(); this.ball.visible = false; this.ballShadow.visible = false; } else { this.ball.visible = true; this.ballShadow.visible = true; } }
@@ -165,6 +205,7 @@ export class Renderer {
       const o = i * 7;
       animatePlayer(this.players[i], P[o], P[o + 1], P[o + 2], P[o + 3], P[o + 4], P[o + 5], P[o + 6], dt, this.time);
     }
+    this.updateOfficials(dt, snap);
     // ball
     const [bx, by, bz] = snap.b;
     const prev = this.ballPrev;
@@ -235,10 +276,10 @@ export class Renderer {
       fov = 45;
       this.camPos.lerp(pos, Math.min(1, dt * 2)); this.camLook.lerp(look, Math.min(1, dt * 3));
     } else { // broadcast: elevated main-stand camera that pans and tracks
-      pos = new THREE.Vector3(bx * 0.7, 30, 70 + bz * 0.08);
-      look = new THREE.Vector3(bx * 0.96, 0, bz * 0.6 + 2);
-      const distZ = 70 - bz * 0.6;
-      fov = 33 + (distZ - 70) * 0.1 + Math.abs(bx) * 0.02;
+      pos = new THREE.Vector3(bx * 0.82, 37, 63 + bz * 0.12);
+      look = new THREE.Vector3(bx * 0.97, 0, bz * 0.72 + 3);
+      const dist = Math.hypot(look.x - pos.x, 37, look.z - pos.z);
+      fov = Math.max(24, Math.min(40, 6 + dist * 0.36));
       this.camPos.lerp(pos, Math.min(1, dt * 2.6)); this.camLook.lerp(look, Math.min(1, dt * 3.6));
     }
     cam.position.copy(this.camPos);

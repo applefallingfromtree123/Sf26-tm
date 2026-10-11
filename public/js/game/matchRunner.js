@@ -1,6 +1,6 @@
 // Drives a match: local (engine in the browser) or online (server snapshots).
 import { Match } from '/shared/sim.js';
-import { modal, esc, confirmBox } from '../ui/dom.js';
+import { modal, esc, confirmBox, toast } from '../ui/dom.js';
 import { CONTROLS_HTML } from './input.js';
 import { TOUCH_HELP_HTML } from './touch.js';
 const controlsHelp = () => (document.body.classList.contains('device-pc') ? CONTROLS_HTML : TOUCH_HELP_HTML);
@@ -59,6 +59,14 @@ export class MatchRunner {
       case 'halftime': A.whistle(2, true); break;
       case 'fulltime': A.whistle(3, true); A.cheer(false); break;
       case 'skill': this.spike = Math.max(this.spike, 0.3); break;
+      case 'sub': {
+        const tm = H.teams[e.team];
+        if (tm) { tm.xi[e.ti] = e.info; tm.bench = (tm.bench || []).filter(b => b.id !== e.info.id); }
+        R.replacePlayer(e.p, e.info, e.team, tm?.slots[e.ti]?.pos === 'GK');
+        H.lastPc = -1;
+        H.subFlash(e.outName, e.info.name, e.team);
+        break;
+      }
     }
   }
 
@@ -101,10 +109,17 @@ export class MatchRunner {
       const resumeSync = () => { const inputs = humans.map(h => I.poll(h.slot, this.camYaw(1))); m.consumeTaps(inputs); };
       I.on('pause', () => {
         if (endShown) return;
+        if (this.subModal) { this.subModal.close(); return; }
         if (paused) { pauseModal?.close(); return; }
         paused = true;
-        pauseModal = modal(`<h2>일시정지</h2><div class="col"><button class="btn primary" data-close>계속하기</button><button class="btn" id="pm-cam">카메라: ${CAM_NAMES[R.camMode]}</button><details><summary class="muted" style="cursor:pointer">조작법</summary>${controlsHelp()}</details><button class="btn danger" id="pm-quit">경기 포기</button></div>`, { onClose: () => { paused = false; pauseModal = null; last = performance.now(); resumeSync(); } });
+        pauseModal = modal(`<h2>일시정지</h2><div class="col"><button class="btn primary" data-close>계속하기</button><button class="btn" id="pm-sub">🔁 선수 교체 (${m.subsUsed[myTeam]}/${m.maxSubs})</button><button class="btn" id="pm-cam">카메라: ${CAM_NAMES[R.camMode]}</button><details><summary class="muted" style="cursor:pointer">조작법</summary>${controlsHelp()}</details><button class="btn danger" id="pm-quit">경기 포기</button></div>`, { onClose: () => { paused = false; pauseModal = null; last = performance.now(); resumeSync(); } });
         pauseModal.el.querySelector('#pm-cam').onclick = (ev) => { this.cycleCamera(); ev.target.textContent = `카메라: ${CAM_NAMES[R.camMode]}`; };
+        pauseModal.el.querySelector('#pm-sub').onclick = () => this.subMenu({
+          team: H.teams[myTeam], used: () => m.subsUsed[myTeam], max: m.maxSubs,
+          stamina: (ti) => { const p = m.teamPlayer(myTeam, ti); return p ? (p.off ? -1 : p.stamina) : -1; },
+          doSub: (ti, id) => { const ok = m.substitute(myTeam, ti, id); for (const ev of m.drainEvents()) this.handleEvent(ev, cur); return ok; },
+          onDone: () => { const b = pauseModal?.el.querySelector('#pm-sub'); if (b) b.textContent = `🔁 선수 교체 (${m.subsUsed[myTeam]}/${m.maxSubs})`; },
+        });
         pauseModal.el.querySelector('#pm-quit').onclick = () => { pauseModal.close(); finish({ aborted: true }); };
       });
       I.on('camera', () => this.cycleCamera());
@@ -119,7 +134,7 @@ export class MatchRunner {
       });
       const finish = (res) => {
         if (done) return; done = true;
-        I.on('pause', null); I.on('camera', null); I.on('skip', null); I.on('quit', null);
+        this.subModal?.close(); I.on('pause', null); I.on('camera', null); I.on('skip', null); I.on('quit', null);
         H.hide(); R.setMenuMode(true);
         resolve(res);
       };
@@ -184,6 +199,27 @@ export class MatchRunner {
     });
   }
 
+  // substitution picker: choose a player on the pitch, then a bench player
+  subMenu({ team, used, max, stamina, doSub, onDone }) {
+    let out = null;
+    const m = this.subModal = modal('<div id="subm"></div>', { onClose: () => { this.subModal = null; onDone && onDone(); } });
+    const render = () => {
+      const left = max - used();
+      m.el.querySelector('#subm').innerHTML = `<h2>선수 교체 <span class="muted small">남은 교체 ${left}/${max}</span></h2>
+        <div class="grid2 sub-grid"><div><div class="small muted">1. 나갈 선수</div>${team.xi.map((p, ti) => { const st = stamina(ti); return `<div class="sub-row ${out === ti ? 'on' : ''} ${st < 0 ? 'dis' : ''}" data-out="${ti}"><span class="pos ${p.pos === 'GK' || team.slots[ti].pos === 'GK' ? 'GK' : ''}">${esc(team.slots[ti].pos)}</span><span class="grow">${esc(p.name)}</span><span class="ovr">${p.ovr}</span><span class="sub-st"><i style="width:${Math.max(0, st) * 100}%;background:${st < 0.55 ? '#ff5b6e' : st < 0.75 ? '#ffcc4d' : '#00ffa3'}"></i></span></div>`; }).join('')}</div>
+        <div><div class="small muted">2. 들어갈 선수 (벤치)</div>${(team.bench || []).map(b => `<div class="sub-row ${left <= 0 || out === null ? 'dis' : ''}" data-in="${esc(b.id)}"><span class="pos">${esc(b.pos)}</span><span class="grow">${esc(b.name)}</span><span class="ovr">${b.ovr}</span></div>`).join('') || '<p class="muted">벤치에 선수가 없습니다.</p>'}</div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:12px"><button class="btn" data-close>닫기</button></div>`;
+      m.el.querySelectorAll('[data-close]').forEach(b => b.onclick = () => m.close());
+      m.el.querySelectorAll('[data-out]').forEach(r => r.onclick = () => { if (stamina(+r.dataset.out) < 0) return; out = +r.dataset.out; render(); });
+      m.el.querySelectorAll('[data-in]').forEach(r => r.onclick = () => {
+        if (out === null) return toast('먼저 나갈 선수를 선택하세요.');
+        if (used() >= max) return toast('교체 횟수를 모두 사용했습니다.', true);
+        if (doSub(out, r.dataset.in)) { toast('교체 완료!'); out = null; setTimeout(render, 150); }
+      });
+    };
+    render();
+  }
+
   ratingsHtml(res, team, cfg = {}) {
     const mine = res.ratings.filter(r => r.team === team).sort((a, b) => b.rating - a.rating);
     const motm = res.motm;
@@ -198,6 +234,7 @@ export class MatchRunner {
     const { home, away, you } = start;
     const kits = start.kits;
     this.onChatSend = (text) => socket.emit('chat', text);
+    this.onlineSubs = 0;
     this.setupScene(home, away, kits, true);
     const R = this.app.renderer, H = this.app.hud, I = this.app.input;
     const DELAY = 110;
@@ -220,8 +257,15 @@ export class MatchRunner {
       socket.on('snap', onSnap); socket.on('match:end', onEnd); socket.on('disconnect', onDisc); socket.on('chat', onChat);
       I.on('chat', () => H.toggleChat());
       I.on('pause', () => {
-        const pm = modal(`<h2>메뉴</h2><div class="col"><button class="btn primary" data-close>계속하기</button><button class="btn" id="pm-cam">카메라 변경</button><details><summary class="muted" style="cursor:pointer">조작법</summary>${controlsHelp()}</details><button class="btn danger" id="pm-quit">기권하기</button></div><p class="small muted">온라인 경기는 일시정지되지 않습니다.</p>`);
+        if (this.subModal) { this.subModal.close(); return; }
+        if (this.onlineMenu) { this.onlineMenu.close(); return; }
+        const pm = this.onlineMenu = modal(`<h2>메뉴</h2><div class="col"><button class="btn primary" data-close>계속하기</button><button class="btn" id="pm-sub">🔁 선수 교체</button><button class="btn" id="pm-cam">카메라 변경</button><details><summary class="muted" style="cursor:pointer">조작법</summary>${controlsHelp()}</details><button class="btn danger" id="pm-quit">기권하기</button></div><p class="small muted">온라인 경기는 일시정지되지 않습니다.</p>`, { onClose: () => { this.onlineMenu = null; } });
         pm.el.querySelector('#pm-cam').onclick = () => this.cycleCamera();
+        pm.el.querySelector('#pm-sub').onclick = () => this.subMenu({
+          team: H.teams[you], used: () => this.onlineSubs || 0, max: 5,
+          stamina: (ti) => { const s = buf.length ? buf[buf.length - 1].s : null; const i = you * 11 + ti; return s ? (s.p[i * 7 + 4] === -1 ? -1 : s.p[i * 7 + 4] === 3 ? 1 : s.p[i * 7 + 6]) : 1; },
+          doSub: (ti, id) => { socket.emit('sub', { ti, benchId: id }); this.onlineSubs = (this.onlineSubs || 0) + 1; return true; },
+        });
         pm.el.querySelector('#pm-quit').onclick = () => { pm.close(); socket.emit('room:leave'); };
       });
       I.on('camera', () => this.cycleCamera());
@@ -233,7 +277,7 @@ export class MatchRunner {
       const finish = (res) => {
         if (done) return; done = true;
         socket.off('snap', onSnap); socket.off('match:end', onEnd); socket.off('disconnect', onDisc); socket.off('chat', onChat);
-        I.on('pause', null); I.on('camera', null); I.on('skip', null); I.on('quit', null); I.on('chat', null); this.onChatSend = null;
+        this.subModal?.close(); this.onlineMenu?.close(); I.on('pause', null); I.on('camera', null); I.on('skip', null); I.on('quit', null); I.on('chat', null); this.onChatSend = null;
         H.hide(); R.setMenuMode(true);
         resolve(res);
       };

@@ -133,7 +133,7 @@ export function buildStadium(scene, renderer, opts = {}) {
   const away = new THREE.Color(opts.awayColor || '#1d428a');
 
   // ground (outer apron)
-  const apron = new THREE.Mesh(new THREE.PlaneGeometry(320, 280), new THREE.MeshStandardMaterial({ color: 0x1f5a24, roughness: 1 }));
+  const apron = new THREE.Mesh(new THREE.PlaneGeometry(400, 340), new THREE.MeshStandardMaterial({ color: 0x1f5a24, roughness: 1 }));
   apron.rotation.x = -Math.PI / 2; apron.position.y = -0.02; apron.receiveShadow = true;
   group.add(apron);
   // pitch
@@ -146,8 +146,8 @@ export function buildStadium(scene, renderer, opts = {}) {
   // running track / concrete rim around grass
   const rimMat = new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.9 });
   for (const s of [-1, 1]) {
-    const a = new THREE.Mesh(new THREE.PlaneGeometry(210, 22), rimMat); a.rotation.x = -Math.PI / 2; a.position.set(0, 0.005, s * (AZ / 2 + 11)); a.receiveShadow = true; group.add(a);
-    const b = new THREE.Mesh(new THREE.PlaneGeometry(22, AZ + 44), rimMat); b.rotation.x = -Math.PI / 2; b.position.set(s * (AX / 2 + 11), 0.005, 0); b.receiveShadow = true; group.add(b);
+    const a = new THREE.Mesh(new THREE.PlaneGeometry(240, 32), rimMat); a.rotation.x = -Math.PI / 2; a.position.set(0, 0.005, s * (AZ / 2 + 15)); a.receiveShadow = true; group.add(a);
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(32, AZ + 60), rimMat); b.rotation.x = -Math.PI / 2; b.position.set(s * (AX / 2 + 15), 0.005, 0); b.receiveShadow = true; group.add(b);
   }
 
   // stands
@@ -206,7 +206,7 @@ export function buildStadium(scene, renderer, opts = {}) {
     ribbon.rotation.y = Math.PI;
     sub.add(ribbon);
     // roof
-    const roofD = upZ + upper * 0.8 + 6, roofY = upY + upper * 0.56 + 7;
+    const roofD = upZ + upper * 0.8 + 6, roofY = upY + upper * 0.56 + 19; // tall roof: the broadcast gantry camera hangs below it
     const roof = new THREE.Mesh(new THREE.BoxGeometry(length + 2, 0.5, roofD), new THREE.MeshStandardMaterial({ color: 0x9aa3b0, roughness: 0.6, metalness: 0.4 }));
     roof.position.set(0, roofY, roofD / 2 - 6);
     sub.add(roof);
@@ -230,14 +230,14 @@ export function buildStadium(scene, renderer, opts = {}) {
   ribbonTex.repeat.set(3, 1);
   const glowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85 });
   const rowsL = 24, rowsU = 20; // fixed geometry (the broadcast camera sits under the roof); quality only thins the crowd
-  const SIDE = HW + 18, END = HL + 20; // distance from centre to the front of the stands
-  placeStand(176, rowsL, rowsU, SIDE, 0, false); // main stand (near camera, z+)
-  placeStand(176, rowsL, rowsU, SIDE, Math.PI, false); // far side
-  placeStand(118, rowsL, rowsU, END, Math.PI / 2, true); // east end (away fans corner)
-  placeStand(118, rowsL, rowsU, END, -Math.PI / 2, false);
+  const SIDE = HW + 24, END = HL + 26; // distance from centre to the front of the stands
+  placeStand(204, rowsL, rowsU, SIDE, 0, false); // main stand (near camera, z+)
+  placeStand(204, rowsL, rowsU, SIDE, Math.PI, false); // far side
+  placeStand(140, rowsL, rowsU, END, Math.PI / 2, true); // east end (away fans corner)
+  placeStand(140, rowsL, rowsU, END, -Math.PI / 2, false);
   // corners
   for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-    const len = 38;
+    const len = 48;
     const ang = Math.atan2(sx, sz);
     const dist = Math.hypot(END, SIDE) * 0.86;
     placeCorner(len, ang, dist);

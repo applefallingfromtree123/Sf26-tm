@@ -54,6 +54,7 @@ export class Match {
     }));
     this.ball = { x: 0, y: BR, z: 0, vx: 0, vy: 0, vz: 0, spin: 0, owner: -1, lastTouch: -1, lastTeam: -1, kickId: 0, kind: '', shot: null, pass: null, inGoal: false, dribPh: 0 };
     this.time = 0; this.half = 1; this.added = [0, 0]; this.addedShown = [false, false];
+    this.subsUsed = [0, 0]; this.outPlayers = []; this.maxSubs = opts.maxSubs ?? 5; this.aiSubAt = [3600, 3600];
     this.score = [0, 0];
     this.realT = 0;
     this.phase = 'kickoff'; this.phaseT = 0; this.sp = null;
@@ -86,7 +87,7 @@ export class Match {
     return Math.abs(x - gx) <= PITCH.BOX_D && Math.abs(z) <= PITCH.BOX_W && Math.sign(x) === Math.sign(gx);
   }
   maxSpeed(p) {
-    const base = 6.4 + p.a.pac * 3.9; // brisk, arcade-leaning pace
+    const base = 6.7 + p.a.pac * 4.1; // brisk, arcade-leaning pace
     return base * (0.82 + 0.18 * p.stamina) * this.dmod(p.team, 'speed') * (p.ti === this.lockedTi(p.team) ? 1.02 : 1);
   }
   lockedTi(t) { const c = this.controllers.find(c => c.team === t && c.lock >= 0); return c ? c.lock : -99; }
@@ -149,6 +150,7 @@ export class Match {
     this.time += dt * this.gameSpeed;
     this.checkClock(prevTime);
     if (this.phase === 'halftime' || this.phase === 'fulltime') return;
+    this.aiSubstitutions();
 
     if (this.phase === 'kickoff' || this.phase === 'setpiece') {
       this.stepSetPiece(dt, inputs);
@@ -867,7 +869,7 @@ export class Match {
     else if (p.state === STATE.dive) { p.vx *= 1 - 3 * dt; p.vz *= 1 - 2.2 * dt; }
     else if (p.state === STATE.fallen) { p.vx *= 1 - 6 * dt; p.vz *= 1 - 6 * dt; }
     else {
-      const acc = (11 + p.a.pac * 7) * dt;
+      const acc = (13 + p.a.pac * 8) * dt;
       let ex = dvx - p.vx, ez = dvz - p.vz;
       const el = hyp(ex, ez);
       if (el > acc) { ex = ex / el * acc; ez = ez / el * acc; }
@@ -897,7 +899,9 @@ export class Match {
     const scale = 720 / this.realSeconds;
     if (effort > 0.8) p.stamina -= (0.008 - p.a.phy * 0.004) * dt * scale;
     else if (effort < 0.4) p.stamina += 0.004 * dt * scale;
-    p.stamina = clamp(p.stamina - 0.00085 * dt * scale * 0.4, 0.25, 1);
+    // long-term fatigue builds up over the match and caps how much stamina can recover
+    p.fatigue = (p.fatigue || 0) + dt * scale * 0.00042 * (1.35 - p.a.phy * 0.6) * (0.6 + effort * 0.8);
+    p.stamina = clamp(p.stamina, 0.25, 1 - Math.min(0.45, p.fatigue));
   }
   separatePlayers() {
     const ps = this.players;
@@ -1337,6 +1341,41 @@ export class Match {
       if (p.yellow >= 2) { this.emit('card', { p: p.i, color: 'red', team: p.team, second: true }); this.sendOff(p); }
     } else { this.stats[p.team].red++; this.emit('card', { p: p.i, color: 'red', team: p.team }); this.sendOff(p); }
   }
+  // ---------- substitutions ----------
+  // replace the player at team index `ti` with bench player `benchId`; returns true on success
+  substitute(team, ti, benchId) {
+    const tm = this.teams[team];
+    const p = this.teamPlayer(team, ti);
+    const bi = (tm.bench || []).findIndex(b => b.id === benchId);
+    if (!p || bi < 0 || this.subsUsed[team] >= this.maxSubs || this.finished) return false;
+    const info = tm.bench[bi];
+    tm.bench.splice(bi, 1);
+    this.subsUsed[team]++;
+    this.outPlayers.push({ team, info: p.info, slot: p.slot, isGK: p.isGK, group: p.group, st: p.st });
+    const outName = p.info.name;
+    p.info = info;
+    for (const k of ['pac', 'sho', 'pas', 'dri', 'def', 'phy']) p.a[k] = (info.attrs?.[k] ?? 60) / 100;
+    p.st = { goals: 0, assists: 0, shots: 0, sot: 0, passes: 0, passOk: 0, tackles: 0, tackleOk: 0, saves: 0, fouls: 0, rating: 6.0, touches: 0, km: 0 };
+    p.stamina = 1; p.fatigue = 0; p.yellow = 0; p.run = null;
+    if (tm.xi) tm.xi[ti] = info;
+    this.emit('sub', { team, ti, p: p.i, info, outName, used: this.subsUsed[team] });
+    return true;
+  }
+  aiSubstitutions() {
+    for (const t of [0, 1]) {
+      if (!this.isCPU(t) || this.time < this.aiSubAt[t] || this.subsUsed[t] >= this.maxSubs) continue;
+      if (this.phase === 'play' && this.ball.owner >= 0) continue; // wait for a stoppage-ish moment
+      this.aiSubAt[t] = this.time + 600 + this.r() * 300; // next window ~10-15 game minutes later
+      const tired = this.active(t).filter(p => !p.isGK && p.stamina < 0.9).sort((a, b) => a.stamina - b.stamina);
+      let n = 0;
+      for (const p of tired) {
+        if (n >= 2) break;
+        const bench = (this.teams[t].bench || []).filter(b => (GROUP[b.pos] || 'MID') === p.group && b.pos !== 'GK').sort((a, b) => b.ovr - a.ovr);
+        if (bench[0] && this.substitute(t, p.ti, bench[0].id)) n++;
+      }
+    }
+  }
+
   sendOff(p) {
     p.off = true; p.st.rating -= 1.5; p.x = 0; p.z = HW + 8; p.vx = p.vz = 0;
     if (this.ball.owner === p.i) this.ball.owner = -1;
@@ -1685,7 +1724,7 @@ export class Match {
 
   finalize() {
     const w = this.score[0] > this.score[1] ? 0 : this.score[1] > this.score[0] ? 1 : -1;
-    for (const p of this.players) {
+    for (const p of [...this.players, ...this.outPlayers]) {
       const s = p.st;
       s.rating += (s.passOk * 0.035) - Math.max(0, s.passes - s.passOk) * 0.06 + s.tackleOk * 0.12 + s.saves * 0.28 + s.sot * 0.12 + s.km * 0.05;
       if (w === p.team) s.rating += 0.4; else if (w >= 0) s.rating -= 0.3;
@@ -1694,7 +1733,8 @@ export class Match {
     }
   }
   result() {
-    const ratings = this.players.map(p => ({ i: p.i, team: p.team, id: p.info.id, name: p.info.name, num: p.info.num, pos: p.slot.pos, rating: p.st.rating, ...p.st }));
+    const ratings = this.players.map(p => ({ i: p.i, team: p.team, id: p.info.id, name: p.info.name, num: p.info.num, pos: p.slot.pos, rating: p.st.rating, ...p.st }))
+      .concat(this.outPlayers.map(o => ({ i: -1, team: o.team, id: o.info.id, name: o.info.name, num: o.info.num, pos: o.slot.pos, subbedOff: true, rating: o.st.rating, ...o.st })));
     const motm = ratings.slice().sort((a, b) => b.rating - a.rating)[0];
     return { score: [...this.score], stats: this.stats.map((s, i) => ({ ...s, possPct: i === 0 ? this.possessionPct() : 100 - this.possessionPct() })), scorers: this.scorers, ratings, motm };
   }

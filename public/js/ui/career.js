@@ -4,6 +4,9 @@ import { generateSquad, buildTeam, kitColors, pickLineup, FORMATIONS, FORMATION_
 import { roundRobin, newTable, applyResult, sortTable, simFixture, addScorers, developPlayer, youthPlayer, allPlayers, leagueClubs, strength } from '/shared/career.js';
 import { esc, toast, crest, modal, confirmBox, posTag, money, posGroup, textOn } from './dom.js';
 import { teamPicker, clubCard, clubOvr, bindGo, DIFFS } from './menus.js';
+import { seasonCups, attachSchedules, userTie, stageName, simRound, advance } from '/shared/cups.js';
+import { quickSim } from '/shared/sim.js';
+import { cupsTab, processDueCups, finishCupTie, cupBadge } from './cupui.js';
 
 const SLOTS = ['manager1', 'manager2', 'manager3'];
 
@@ -48,10 +51,17 @@ function newCareer(app, slot) {
       formation: '4-3-3', lineup: null, squad: generateSquad(club).map(p => ({ ...p, apps: 0, goals: 0, assists: 0, rsum: 0 })), mods: {},
       fixtures: roundRobin(shuffle(ids)), table: newTable(ids), scorers: {}, news: [{ t: `${c.name} 이사회가 새 감독 ${esc(root.querySelector('#mname').value.trim() || '신임')}의 부임을 발표했습니다. 목표: ${objective(club)}` }], history: [],
     };
+    ensureCups(save);
     await persist(app, save);
     hub(app, save);
   };
 }
+// cup competitions for the current season (also upgrades saves made before cups existed)
+function ensureCups(save) {
+  if (!save.cups) save.cups = attachSchedules(seasonCups(save.clubId, save.season), save.fixtures.length);
+  save.trophies ||= [];
+}
+const strOf = (save) => { const cache = new Map(); return (id) => { if (!cache.has(id)) cache.set(id, strength(squadOf(save, id))); return cache.get(id); }; };
 const startBudget = (club) => Math.max(5, Math.round((clubOvr(club) - 60) * 5));
 function objective(club) {
   const c = CLUB_BY_ID[club];
@@ -81,6 +91,7 @@ function userLineup(save) {
 
 // ---------------- hub ----------------
 function hub(app, save, tab = 'home') {
+  ensureCups(save);
   const club = CLUB_BY_ID[save.clubId];
   const done = save.round >= save.fixtures.length;
   const pos = sortTable(save.table).findIndex(r => r.id === save.clubId) + 1;
@@ -89,13 +100,13 @@ function hub(app, save, tab = 'home') {
       <div class="row">${crest(club, 'lg')}<div><h1 class="title">${esc(club.name)}</h1><p class="subtitle">${esc(save.manager)} 감독 · ${save.season}/${(save.season + 1) % 100} ${esc(club.leagueName)} · ${done ? '시즌 종료' : `${save.round + 1}/${save.fixtures.length} 라운드`} · 순위 ${pos}위 · 예산 <b class="accent">${money(save.budget)}</b></p></div></div>
       <div class="row"><button class="btn sm" id="savebtn">💾 저장</button><button class="btn ghost" id="quit">메인 메뉴</button></div>
     </div>
-    <div class="tabs">${[['home', '홈'], ['squad', '스쿼드 · 전술'], ['transfer', '이적시장'], ['table', '리그 순위'], ['fixtures', '일정'], ['stats', '기록']].map(([k, n]) => `<div class="tab ${k === tab ? 'on' : ''}" data-tab="${k}">${n}</div>`).join('')}</div>
+    <div class="tabs">${[['home', '홈'], ['squad', '스쿼드 · 전술'], ['transfer', '이적시장'], ['table', '리그 순위'], ['fixtures', '일정'], ['cups', '🏆 컵 대회'], ['stats', '기록']].map(([k, n]) => `<div class="tab ${k === tab ? 'on' : ''}" data-tab="${k}">${n}</div>`).join('')}</div>
     <div id="content" style="flex:1;min-height:0"></div></div>`);
   root.querySelectorAll('[data-tab]').forEach(t => t.onclick = () => hub(app, save, t.dataset.tab));
   root.querySelector('#savebtn').onclick = async () => { const w = await persist(app, save); toast(w === 'cloud' ? '클라우드에 저장되었습니다.' : '이 브라우저에 저장되었습니다.'); };
   root.querySelector('#quit').onclick = async () => { await persist(app, save); app.go('main'); };
   const el = root.querySelector('#content');
-  ({ home: tabHome, squad: tabSquad, transfer: tabTransfer, table: tabTable, fixtures: tabFixtures, stats: tabStats })[tab](app, save, el);
+  ({ home: tabHome, squad: tabSquad, transfer: tabTransfer, table: tabTable, fixtures: tabFixtures, cups: (a, s, e) => { e.innerHTML = `<div class="scroll" style="max-height:72vh">${cupsTab(s.cups, s.clubId)}</div>`; }, stats: tabStats })[tab](app, save, el);
 }
 
 function nextFixture(save) {
@@ -104,8 +115,12 @@ function nextFixture(save) {
 }
 
 function tabHome(app, save, el) {
+  const cupNews = [];
+  const cup = processDueCups(save.cups, save.round, save.clubId, strOf(save), cupNews);
+  if (cupNews.length) save.news.push(...cupNews);
+  const tie = cup && userTie(cup, save.clubId);
   const fx = nextFixture(save);
-  const done = save.round >= save.fixtures.length;
+  const done = save.round >= save.fixtures.length && !tie;
   const tbl = sortTable(save.table);
   const my = tbl.findIndex(r => r.id === save.clubId);
   const recent = [];
@@ -114,7 +129,7 @@ function tabHome(app, save, el) {
   el.innerHTML = `<div class="grid2">
     <div class="col">
       <div class="panel col">
-        ${done ? `<h3>시즌 종료!</h3><p class="lead">최종 순위: <b class="accent">${my + 1}위</b> ${my === 0 ? '🏆 리그 우승!' : ''}</p><button class="btn primary" id="newseason">다음 시즌 시작 →</button>` : `
+        ${tie ? cupTiePanel(save, cup, tie) : done ? `<h3>시즌 종료!</h3><p class="lead">최종 순위: <b class="accent">${my + 1}위</b> ${my === 0 ? '🏆 리그 우승!' : ''}</p><button class="btn primary" id="newseason">다음 시즌 시작 →</button>` : `
         <h3>다음 경기 · ${save.round + 1}라운드</h3>
         <div class="row" style="justify-content:space-around">
           <div style="text-align:center">${crest(CLUB_BY_ID[fx.h], 'lg')}<div style="margin-top:6px;font-weight:700">${esc(CLUB_BY_ID[fx.h].name)}</div><div class="small muted">OVR ${Math.round(strength(squadOf(save, fx.h)))}</div></div>
@@ -130,7 +145,10 @@ function tabHome(app, save, el) {
       <div class="panel"><h3>뉴스</h3>${save.news.slice(-6).reverse().map(n => `<div class="news">${n.t}</div>`).join('')}</div>
       <div class="panel"><h3>순위 요약</h3>${miniTable(save, tbl)}</div>
     </div></div>`;
-  if (done) el.querySelector('#newseason').onclick = () => newSeason(app, save);
+  if (tie) {
+    el.querySelector('#play').onclick = () => playCupTie(app, save, cup, tie, true);
+    el.querySelector('#sim').onclick = () => playCupTie(app, save, cup, tie, false);
+  } else if (done) el.querySelector('#newseason').onclick = () => newSeason(app, save);
   else {
     el.querySelector('#play').onclick = () => playRound(app, save, true);
     el.querySelector('#sim').onclick = () => playRound(app, save, false);
@@ -146,6 +164,63 @@ function miniTable(save, tbl) {
   return `<table class="tbl"><tr><th>#</th><th>클럽</th><th class="num">경기</th><th class="num">득실</th><th class="num">승점</th></tr>${rows.map(({ r, i }) => `<tr class="${r.id === save.clubId ? 'me' : ''}"><td>${i + 1}</td><td>${esc(CLUB_BY_ID[r.id].name)}</td><td class="num">${r.p}</td><td class="num">${r.gd > 0 ? '+' : ''}${r.gd}</td><td class="num"><b>${r.pts}</b></td></tr>`).join('')}</table>`;
 }
 
+function cupTiePanel(save, cup, tie) {
+  const S = strOf(save);
+  return `<div class="row" style="justify-content:space-between"><h3 style="margin:0">${cupBadge(cup)}</h3><span class="badge">${stageName(cup)}</span></div>
+    <div class="row" style="justify-content:space-around">
+      <div style="text-align:center">${crest(CLUB_BY_ID[tie.h], 'lg')}<div style="margin-top:6px;font-weight:700">${esc(CLUB_BY_ID[tie.h].name)}</div><div class="small muted">OVR ${Math.round(S(tie.h))}</div></div>
+      <div class="vs">VS</div>
+      <div style="text-align:center">${crest(CLUB_BY_ID[tie.a], 'lg')}<div style="margin-top:6px;font-weight:700">${esc(CLUB_BY_ID[tie.a].name)}</div><div class="small muted">OVR ${Math.round(S(tie.a))}</div></div>
+    </div>
+    <div class="small muted" style="text-align:center">컵 대회 주간 · 단판 승부 (무승부 시 승부차기) · 우승 상금 ${money(cup.prize)}</div>
+    <div class="row" style="justify-content:center"><button class="btn primary" id="play" style="font-size:18px">⚽ 경기하기</button><button class="btn" id="sim">⏩ 시뮬레이션</button></div>`;
+}
+// play the user's match (h vs a) in the 3D engine; returns the match result or null when abandoned
+async function playUserMatch(app, save, h, a, quitWarning) {
+  userLineup(save);
+  const mk = (id) => id === save.clubId ? buildTeam(id, { players: save.squad, formation: save.formation, lineup: save.lineup }) : buildTeam(id, { players: squadOf(save, id) });
+  const home = mk(h), away = mk(a);
+  const kits = kitColors(home.club, away.club);
+  const res = await app.playMatch({ home, away, kits, difficulty: save.difficulty, humans: [{ slot: 0, team: h === save.clubId ? 0 : 1 }], quitWarning });
+  return !res || res.aborted ? null : res;
+}
+function addAppearances(save, res, myTeam) {
+  for (const r of res.ratings) {
+    if (r.team !== myTeam) continue;
+    const p = save.squad.find(q => q.id === r.id);
+    if (p) { p.apps = (p.apps || 0) + 1; p.goals = (p.goals || 0) + r.goals; p.assists = (p.assists || 0) + r.assists; p.rsum = (p.rsum || 0) + r.rating; }
+  }
+}
+
+async function playCupTie(app, save, cup, tie, play) {
+  const S = strOf(save);
+  const userHome = tie.h === save.clubId;
+  const news = [];
+  let gh, ga;
+  if (play) {
+    const res = await playUserMatch(app, save, tie.h, tie.a, '경기에서 나가면 0-3 패배로 컵 대회에서 탈락합니다. 나가시겠습니까?');
+    if (!res) { [gh, ga] = userHome ? [0, 3] : [3, 0]; news.push({ t: `${cup.icon} 경기를 포기하여 0-3 패배 처리되었습니다.` }); }
+    else { [gh, ga] = res.score; addAppearances(save, res, userHome ? 0 : 1); }
+  } else [gh, ga] = quickSim(S(tie.h), S(tie.a), Math.random, 0.12);
+  const stage = stageName(cup);
+  const out = await finishCupTie(cup, tie, gh, ga, save.clubId, S);
+  const opp = CLUB_BY_ID[userHome ? tie.a : tie.h].name;
+  const my = userHome ? gh : ga, op = userHome ? ga : gh;
+  const pen = tie.pen ? ` (승부차기 ${userHome ? tie.pen[0] : tie.pen[1]}-${userHome ? tie.pen[1] : tie.pen[0]})` : '';
+  news.unshift({ t: `${cup.icon} ${esc(cup.name)} ${stage} — ${esc(CLUB_BY_ID[save.clubId].name)} ${my} : ${op} ${esc(opp)}${pen} · ${out.won ? (out.champion ? '<b>🏆 우승!</b>' : `${out.stage} 진출`) : '탈락'}` });
+  if (out.champion) {
+    save.budget = Math.round((save.budget + cup.prize) * 10) / 10;
+    save.trophies.push({ season: save.season, cup: cup.id, name: cup.name, icon: cup.icon });
+    news.push({ t: `🏆 <b>${esc(cup.name)} 우승!</b> 상금 ${money(cup.prize)}가 지급되었습니다.` });
+    app.audio?.cheer?.(true);
+  }
+  save.news.push(...news);
+  save.news = save.news.slice(-30);
+  await persist(app, save);
+  hub(app, save, 'home');
+  toast(out.won ? (out.champion ? `🏆 ${cup.name} 우승!` : `${out.stage} 진출!`) : `${cup.name} 탈락...`, !out.won);
+}
+
 async function playRound(app, save, play) {
   const fx = nextFixture(save);
   if (!fx) return;
@@ -154,12 +229,8 @@ async function playRound(app, save, play) {
   let gh, ga;
   const news = [];
   if (play) {
-    userLineup(save);
-    const mk = (id) => id === save.clubId ? buildTeam(id, { players: save.squad, formation: save.formation, lineup: save.lineup }) : buildTeam(id, { players: squadOf(save, id) });
-    const home = mk(fx.h), away = mk(fx.a);
-    const kits = kitColors(home.club, away.club);
-    const res = await app.playMatch({ home, away, kits, difficulty: save.difficulty, humans: [{ slot: 0, team: userHome ? 0 : 1 }], quitWarning: '경기에서 나가면 0-3 몰수패로 처리됩니다. 나가시겠습니까?' });
-    if (!res || res.aborted) {
+    const res = await playUserMatch(app, save, fx.h, fx.a, '경기에서 나가면 0-3 몰수패로 처리됩니다. 나가시겠습니까?');
+    if (!res) {
       gh = userHome ? 0 : 3; ga = userHome ? 3 : 0;
       news.push({ t: `경기를 포기하여 <b>0-3 몰수패</b> 처리되었습니다.` });
     } else {
@@ -221,7 +292,10 @@ async function newSeason(app, save) {
   const pos = tbl.findIndex(r => r.id === save.clubId) + 1;
   const n = tbl.length;
   const prize = Math.round((n - pos + 1) * 2.5 + (pos === 1 ? 40 : pos <= 4 ? 20 : 0));
-  save.history.push({ season: save.season, pos, champion: tbl[0].id, pts: tbl[pos - 1].pts });
+  const S = strOf(save);
+  for (const c of save.cups || []) while (!c.winner) { simRound(c, S); advance(c); }
+  const cupsWon = (save.trophies || []).filter(t => t.season === save.season).map(t => t.icon + ' ' + t.name);
+  save.history.push({ season: save.season, pos, champion: tbl[0].id, pts: tbl[pos - 1].pts, cups: cupsWon });
   const changes = [];
   for (const p of save.squad) {
     const d = developPlayer(p);
@@ -238,6 +312,8 @@ async function newSeason(app, save) {
   save.budget = Math.round((save.budget + prize + startBudget(save.clubId) * 0.5) * 10) / 10;
   const ids = leagueClubs(save.leagueId);
   save.fixtures = roundRobin(shuffle(ids)); save.table = newTable(ids); save.scorers = {};
+  save.cups = attachSchedules(seasonCups(save.clubId, save.season), save.fixtures.length);
+  save.news.push({ t: `🏆 이번 시즌 컵 대회: ${save.cups.map(c => c.icon + ' ' + esc(c.name)).join(', ') || '없음'}` });
   save.news.push({ t: `🆕 ${save.season}/${(save.season + 1) % 100} 시즌 개막! 상금 ${money(prize)} 지급. 유스 승격: ${youth.map(p => esc(p.name) + ` (${p.pos}, ${p.ovr})`).join(', ')}` });
   if (retired.length) save.news.push({ t: `은퇴: ${retired.map(p => esc(p.name)).join(', ')}` });
   if (changes.length) save.news.push({ t: `선수 성장: ${changes.slice(0, 8).join(' · ')}` });
@@ -364,5 +440,6 @@ function tabStats(app, save, el) {
   const ast = Object.entries(save.scorers).map(([id, s]) => ({ id, ...s })).sort((a, b) => b.a - a.a).slice(0, 10);
   el.innerHTML = `<div class="grid2"><div class="panel scroll" style="max-height:72vh"><h3>득점 순위</h3><table class="tbl"><tr><th>#</th><th>선수</th><th>클럽</th><th class="num">골</th><th class="num">도움</th></tr>${top.map((s, i) => `<tr class="${s.c === save.clubId ? 'me' : ''}"><td>${i + 1}</td><td>${esc(s.n)}</td><td class="small">${esc(CLUB_BY_ID[s.c]?.name || '')}</td><td class="num"><b>${s.g}</b></td><td class="num">${s.a}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">기록 없음</td></tr>'}</table></div>
     <div class="col"><div class="panel"><h3>도움 순위</h3><table class="tbl">${ast.map((s, i) => `<tr class="${s.c === save.clubId ? 'me' : ''}"><td>${i + 1}</td><td>${esc(s.n)}</td><td class="num"><b>${s.a}</b></td></tr>`).join('')}</table></div>
-    <div class="panel"><h3>역대 시즌</h3>${save.history.map(h => `<div class="kv"><span>${h.season}/${(h.season + 1) % 100}</span><span>${h.pos}위 · ${h.pts}점 ${h.pos === 1 ? '🏆' : ''}</span></div>`).join('') || '<p class="muted">첫 시즌 진행 중</p>'}</div></div></div>`;
+    <div class="panel"><h3>역대 시즌</h3>${save.history.map(h => `<div class="kv"><span>${h.season}/${(h.season + 1) % 100}</span><span>${h.pos}위 · ${h.pts}점 ${h.pos === 1 ? '🏆' : ''}${(h.cups || []).length ? ' · ' + h.cups.map(esc).join(', ') : ''}</span></div>`).join('') || '<p class="muted">첫 시즌 진행 중</p>'}</div>
+    <div class="panel"><h3>트로피 진열장</h3>${(save.trophies || []).map(t => `<div class="kv"><span>${t.icon} ${esc(t.name)}</span><span>${t.season}/${(t.season + 1) % 100}</span></div>`).join('') || '<p class="muted">아직 컵 대회 우승이 없습니다.</p>'}</div></div></div>`;
 }

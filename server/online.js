@@ -80,6 +80,14 @@ export function setupOnline(io, store) {
       if (team < 0) return;
       room.inputs[team] = sanitize(inp);
     });
+    socket.on('sub', (d) => {
+      const room = rooms.get(socketRoom.get(socket.id));
+      if (!room || !room.match || room.over) return;
+      const team = room.players.findIndex(p => p.socket.id === socket.id);
+      const ti = Number(d?.ti);
+      if (team < 0 || !Number.isInteger(ti) || ti < 0 || ti > 10) return;
+      room.match.substitute(team, ti, String(d?.benchId || ''));
+    });
     socket.on('chat', (msg) => {
       const room = rooms.get(socketRoom.get(socket.id));
       if (!room || !room.players.length) return;

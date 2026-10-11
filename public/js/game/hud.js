@@ -156,6 +156,13 @@ export class Hud {
   }
   say(text, secs = 3.5) { const el = this.$('h-comm'); if (!el) return; el.textContent = text; el.style.opacity = 1; this.commT = secs; }
   banner(main, sub = '', secs = 3) { const el = this.$('h-banner'); if (!el) return; el.innerHTML = `<div class="banner"><div class="b-main">${esc(main)}</div>${sub ? `<div class="b-sub">${esc(sub)}</div>` : ''}</div>`; this.bannerT = secs; }
+  subFlash(outName, inName, team) {
+    const el = this.$ && this.$('h-card'); if (!el) return;
+    const col = team === 0 ? this.kits.home[0] : this.kits.away[0];
+    el.innerHTML = `<div class="cardflash subflash"><div class="cd" style="background:${col}"></div><div><div><span class="sub-in">▲</span> ${esc(inName)}</div><div class="muted"><span class="sub-out">▼</span> ${esc(outName)}</div></div></div>`;
+    this.cardT = 4.5;
+    this.say(`선수 교체: ${outName} 대신 ${inName}이(가) 투입됩니다.`, 3);
+  }
   cardFlash(color, name) { const el = this.$('h-card'); el.innerHTML = `<div class="cardflash"><div class="cd" style="background:${color === 'red' ? '#ff2d3d' : '#ffd400'}"></div><div>${esc(name)}</div></div>`; this.cardT = 4; }
   replay(on) { const el = this.$('h-replay'); if (el) el.classList.toggle('hidden', !on); }
   pname(i) { if (i < 0) return ''; const t = i < 11 ? 0 : 1; return this.teams[t].xi[i % 11]?.name || ''; }
