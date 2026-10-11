@@ -24,6 +24,7 @@ const LINES = {
   addedTime: ['추가 시간은 {n}분입니다.'],
   skill: ['{p}의 화려한 개인기!', '{p}, 수비를 흔듭니다!'],
 };
+const QUICK_CHAT = ['안녕하세요! 👋', '좋은 경기 해요', '나이스 골! ⚽', '아깝다!', 'ㅋㅋㅋ', '굿 패스 👍', '한 판 더?', 'GG 👏'];
 const fmt = (s, v) => s.replace(/\{(\w)\}/g, (_, k) => v[k] ?? '');
 
 export class Hud {
@@ -48,14 +49,55 @@ export class Hud {
       <div id="h-banner"></div>
       <div id="h-card"></div>
       <div class="replay-tag hidden" id="h-replay">REPLAY</div>
-      <div class="hud-btns"><button class="btn sm" id="h-menu">☰ 메뉴</button><button class="btn sm danger" id="h-quit">나가기</button></div>
+      <div class="hud-btns">${opts.online ? '<button class="btn sm" id="h-chatbtn">💬 채팅<span class="chat-badge hidden" id="h-chatbadge"></span></button>' : ''}<button class="btn sm" id="h-menu">☰ 메뉴</button><button class="btn sm danger" id="h-quit">나가기</button></div>
+      ${opts.online ? `<div class="chat-feed" id="h-chatfeed"></div>
+      <div class="chat-box hidden" id="h-chatbox">
+        <div class="chat-head"><b>경기 채팅</b><button class="btn sm ghost" id="h-chatclose">✕</button></div>
+        <div class="chat-log" id="h-chatlog"><div class="chat-sys">상대와 대화할 수 있습니다. 매너 채팅 부탁드려요!</div></div>
+        <div class="chat-quick">${QUICK_CHAT.map(q => `<button class="chip" data-q="${esc(q)}">${esc(q)}</button>`).join('')}</div>
+        <form class="chat-form" id="h-chatform"><input id="h-chatin" maxlength="80" placeholder="메시지 입력 (Enter 전송)" autocomplete="off" enterkeyhint="send"><button class="btn sm primary">전송</button></form>
+      </div>` : ''}
       <div id="h-over"></div>`;
     this.$ = (id) => this.root.querySelector('#' + id);
     this.radar = this.$('h-radar').getContext('2d');
     this.$('h-menu').onclick = (e) => { e.currentTarget.blur(); opts.onMenu && opts.onMenu(); };
     this.$('h-quit').onclick = (e) => { e.currentTarget.blur(); opts.onQuit && opts.onQuit(); };
+    this.chatOpen = false; this.unread = 0;
+    if (opts.online) {
+      this.$('h-chatbtn').onclick = (e) => { e.currentTarget.blur(); this.toggleChat(); };
+      this.$('h-chatclose').onclick = () => this.toggleChat(false);
+      const send = (text) => { text = String(text || '').trim(); if (text && opts.onChat) opts.onChat(text); };
+      this.$('h-chatform').onsubmit = (e) => { e.preventDefault(); const inp = this.$('h-chatin'); send(inp.value); inp.value = ''; if (!this.touchUI()) { inp.blur(); this.toggleChat(false); } };
+      this.$('h-chatin').addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.target.blur(); this.toggleChat(false); } e.stopPropagation(); });
+      this.root.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { send(b.dataset.q); if (!this.touchUI()) this.toggleChat(false); });
+    }
   }
-  hide() { this.root.classList.add('hidden'); this.root.innerHTML = ''; }
+  hide() { this.root.classList.add('hidden'); this.root.innerHTML = ''; this.chatOpen = false; }
+  touchUI() { return document.body.classList.contains('device-phone') || document.body.classList.contains('device-tablet'); }
+  toggleChat(force) {
+    const box = this.$ && this.$('h-chatbox'); if (!box) return;
+    this.chatOpen = force === undefined ? !this.chatOpen : force;
+    box.classList.toggle('hidden', !this.chatOpen);
+    this.$('h-chatfeed').classList.toggle('hidden', this.chatOpen);
+    if (this.chatOpen) { this.unread = 0; this.$('h-chatbadge').classList.add('hidden'); const log = this.$('h-chatlog'); log.scrollTop = log.scrollHeight; if (!this.touchUI()) setTimeout(() => this.$('h-chatin')?.focus(), 0); }
+    else this.$('h-chatin')?.blur();
+  }
+  chatMessage(m) {
+    if (!this.$ || !this.$('h-chatlog')) return;
+    const color = m.team === 0 ? this.kits.home[0] : m.team === 1 ? this.kits.away[0] : '#9aa3bd';
+    const line = `<div class="chat-line${m.mine ? ' mine' : ''}">${m.system ? `<span class="chat-sys">${esc(m.text)}</span>` : `<b style="color:${color}">${esc(m.from)}</b> ${esc(m.text)}`}</div>`;
+    const log = this.$('h-chatlog');
+    log.insertAdjacentHTML('beforeend', line);
+    while (log.children.length > 60) log.firstElementChild.remove();
+    log.scrollTop = log.scrollHeight;
+    // floating feed (when the chat box is closed)
+    const feed = this.$('h-chatfeed');
+    const item = document.createElement('div'); item.className = 'chat-pop'; item.innerHTML = line;
+    feed.appendChild(item);
+    while (feed.children.length > 4) feed.firstElementChild.remove();
+    setTimeout(() => item.classList.add('fade'), 6000); setTimeout(() => item.remove(), 7000);
+    if (!this.chatOpen && !m.mine) { this.unread++; const b = this.$('h-chatbadge'); b.textContent = this.unread; b.classList.remove('hidden'); }
+  }
 
   update(snap, ctx, dt) {
     if (!snap || !this.$) return;
@@ -80,9 +122,11 @@ export class Hud {
     // hint
     const hint = this.$('h-hint');
     if (snap.sp && snap.sp.w && ctx.mySetPiece) {
-      const m = { kickoff: '킥오프 — J 패스', throwin: '스로인 — J 짧게 · I 길게', corner: '코너킥 — I 크로스 · J 짧은 패스', goalkick: '골킥 — J 짧게 · I 길게', freekick: '프리킥 — K 슛(길게 눌러 파워, E 감아차기) · J 패스 · I 로빙', penalty: '페널티킥 — 방향 + K 슛' }[snap.sp.ty];
+      const T = this.touchUI();
+      const m = (T ? { kickoff: '킥오프 — 패스 버튼', throwin: '스로인 — 패스(짧게) · 로빙(길게)', corner: '코너킥 — 크로스 · 패스(짧게)', goalkick: '골킥 — 패스(짧게) · 로빙(길게)', freekick: '프리킥 — 슛(길게 눌러 파워, 감아차기 버튼) · 패스 · 로빙', penalty: '페널티킥 — 조이스틱으로 방향 + 슛' }
+        : { kickoff: '킥오프 — J 패스', throwin: '스로인 — J 짧게 · I 길게', corner: '코너킥 — I 크로스 · J 짧은 패스', goalkick: '골킥 — J 짧게 · I 길게', freekick: '프리킥 — K 슛(길게 눌러 파워, E 감아차기) · J 패스 · I 로빙', penalty: '페널티킥 — 방향 + K 슛' })[snap.sp.ty];
       hint.textContent = m || ''; hint.classList.toggle('hidden', !m);
-    } else if (snap.sp && snap.sp.ty === 'penalty' && ctx.defendingPen) { hint.textContent = '페널티 방어 — 방향키로 다이빙 방향 선택'; hint.classList.remove('hidden'); }
+    } else if (snap.sp && snap.sp.ty === 'penalty' && ctx.defendingPen) { hint.textContent = this.touchUI() ? '페널티 방어 — 조이스틱으로 다이빙 방향 선택' : '페널티 방어 — 방향키로 다이빙 방향 선택'; hint.classList.remove('hidden'); }
     else hint.classList.add('hidden');
     // radar
     this.drawRadar(snap, ctx);

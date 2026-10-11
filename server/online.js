@@ -74,9 +74,17 @@ export function setupOnline(io, store) {
     });
     socket.on('chat', (msg) => {
       const room = rooms.get(socketRoom.get(socket.id));
-      if (!room) return;
-      const text = String(msg || '').slice(0, 80);
-      for (const p of room.players) p.socket.emit('chat', { from: socket.data.nickname, text });
+      if (!room || !room.players.length) return;
+      const team = room.players.findIndex(p => p.socket.id === socket.id);
+      if (team < 0) return;
+      const text = String(msg ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 80);
+      if (!text) return;
+      // anti-spam: max 5 messages per 6 seconds per player
+      const now = Date.now();
+      const times = (socket.data.chatTimes || []).filter(t => now - t < 6000);
+      if (times.length >= 5) return socket.emit('chat', { system: true, text: '메시지를 너무 빨리 보내고 있습니다. 잠시 후 다시 시도하세요.' });
+      times.push(now); socket.data.chatTimes = times;
+      for (const p of room.players) p.socket.emit('chat', { from: socket.data.nickname, text, team });
     });
     socket.on('disconnect', () => {
       leaveQueue(socket);
@@ -109,6 +117,7 @@ export function setupOnline(io, store) {
         realSeconds: room.match.realSeconds,
       });
     }
+    for (const p of room.players) p.socket.emit('chat', { system: true, text: `${room.players[0].nickname} vs ${room.players[1].nickname} — 곧 경기가 시작됩니다!` });
     // 3 second countdown, then run
     room.startAt = Date.now() + 3500;
     room.timer = setInterval(() => tick(room), TICK_MS);

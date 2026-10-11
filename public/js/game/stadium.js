@@ -174,7 +174,7 @@ export function buildStadium(scene, renderer, opts = {}) {
       const spacing = 0.62;
       const n = Math.floor(length / spacing);
       for (let i = 0; i < n; i++) {
-        if (Math.random() > (quality >= 1 ? 0.93 : 0.55)) continue;
+        if (Math.random() > (quality >= 1 ? 0.93 : 0.4)) continue;
         const x = -length / 2 + (i + 0.5) * spacing + (Math.random() - 0.5) * 0.12;
         const isAway = awayBlock && x > length * 0.18;
         const col = isAway ? awayPal[(Math.random() * awayPal.length) | 0] : palette[(Math.random() * palette.length) | 0];
@@ -229,7 +229,7 @@ export function buildStadium(scene, renderer, opts = {}) {
   const ribbonTex = ledTexture(['SF2027', 'NEXUS ENERGY', 'ORBIT BANK', 'VOLTA', 'SF2027', 'KAIROS AIR', 'HALO MOBILE', 'ZENITH']);
   ribbonTex.repeat.set(3, 1);
   const glowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85 });
-  const rowsL = quality >= 1 ? 24 : 16, rowsU = quality >= 1 ? 20 : 12;
+  const rowsL = 24, rowsU = 20; // fixed geometry (the broadcast camera sits under the roof); quality only thins the crowd
   const SIDE = HW + 18, END = HL + 20; // distance from centre to the front of the stands
   placeStand(176, rowsL, rowsU, SIDE, 0, false); // main stand (near camera, z+)
   placeStand(176, rowsL, rowsU, SIDE, Math.PI, false); // far side

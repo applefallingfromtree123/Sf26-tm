@@ -10,13 +10,20 @@ import * as career from './ui/career.js';
 import * as pcareer from './ui/pcareer.js';
 import * as online from './ui/online.js';
 import { toast } from './ui/dom.js';
+import { TouchControls, detectDevice } from './game/touch.js';
 
 const bar = document.querySelector('.boot-bar i');
 const msg = document.querySelector('.boot-msg');
 const progress = (p, t) => { bar.style.width = `${p}%`; if (t) msg.textContent = t; };
 
-const DEFAULT_SETTINGS = { volume: 0.7, camera: 'broadcast', difficulty: 2, quality: 1, shadows: true, night: true };
-const settings = { ...DEFAULT_SETTINGS, ...LS.get('sf_settings', {}) };
+const DEFAULT_SETTINGS = { volume: 0.7, camera: 'broadcast', difficulty: 2, quality: 1, shadows: true, night: true, device: 'auto', touchScale: 1 };
+const saved = LS.get('sf_settings', null);
+const settings = { ...DEFAULT_SETTINGS, ...(saved || {}) };
+// first launch on a tablet/phone: lighter graphics defaults
+if (!saved) {
+  const d = detectDevice();
+  if (d !== 'pc') { settings.quality = 0; settings.shadows = d === 'tablet'; }
+}
 
 const app = {
   settings, api,
@@ -24,6 +31,18 @@ const app = {
   inMatch: false,
   saveSettings() { LS.set('sf_settings', this.settings); this.audio.setVolume(this.settings.volume); this.renderer.camMode = this.settings.camera; },
   show(html) { this.ui.innerHTML = html; return this.ui.firstElementChild; },
+  // effective device profile: 'pc' | 'tablet' | 'phone'
+  applyDevice() {
+    this.device = this.settings.device === 'auto' || !this.settings.device ? detectDevice() : this.settings.device;
+    document.body.classList.remove('device-pc', 'device-tablet', 'device-phone');
+    document.body.classList.add('device-' + this.device);
+    if (this.inMatch) this.mountTouch();
+  },
+  mountTouch() {
+    if (this.device === 'pc') this.touch.unmount(); else this.touch.mount(this.device, this.settings.touchScale || 1);
+  },
+  enterMatch() { this.inMatch = true; this.ui.innerHTML = ''; document.body.classList.add('in-match'); this.mountTouch(); },
+  leaveMatch() { this.inMatch = false; document.body.classList.remove('in-match'); this.touch.unmount(); },
   go(name, ...args) {
     const screens = {
       main: menus.mainMenu, kickoff: menus.kickoffSetup, settings: menus.settingsScreen, account: menus.accountScreen,
@@ -34,16 +53,14 @@ const app = {
     Promise.resolve(fn(app, ...args)).catch(e => { console.error(e); toast('오류: ' + e.message, true); });
   },
   async playMatch(cfg) {
-    this.inMatch = true;
-    this.ui.innerHTML = '';
+    this.enterMatch();
     try { return await this.runner.playLocal({ camera: this.settings.camera, night: this.settings.night, ...cfg }); }
-    finally { this.inMatch = false; }
+    finally { this.leaveMatch(); }
   },
   async playOnline(socket, start) {
-    this.inMatch = true;
-    this.ui.innerHTML = '';
+    this.enterMatch();
     try { return await this.runner.playOnline(socket, start); }
-    finally { this.inMatch = false; }
+    finally { this.leaveMatch(); }
   },
 };
 window.SF = app;
@@ -55,12 +72,14 @@ async function boot() {
     app.renderer = new Renderer(document.getElementById('gl'), settings);
   } catch (e) {
     console.error(e);
-    msg.textContent = 'WebGL을 초기화할 수 없습니다. 최신 데스크톱 브라우저(Chrome/Edge/Firefox)를 사용해주세요.';
+    msg.textContent = 'WebGL을 초기화할 수 없습니다. 최신 브라우저(Chrome/Safari/Edge/Firefox)를 사용해주세요.';
     return;
   }
   progress(70, '관중 입장 중...');
   app.renderer.camMode = settings.camera;
   app.input = new InputManager();
+  app.touch = new TouchControls(app.input);
+  app.applyDevice();
   app.audio = new GameAudio(); app.audio.setVolume(settings.volume);
   app.hud = new Hud(document.getElementById('hud'));
   app.runner = new MatchRunner(app);

@@ -38,7 +38,7 @@ export class Renderer {
     this.canvas = canvas;
     const hq = (settings.quality ?? 1) >= 1;
     this.gl = new THREE.WebGLRenderer({ canvas, antialias: hq, powerPreference: 'high-performance' });
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, hq ? 2 : 1));
+    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, hq ? 2 : 1.5));
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.gl.toneMapping = THREE.ACESFilmicToneMapping;
     this.gl.toneMappingExposure = 1.05;

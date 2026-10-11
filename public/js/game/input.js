@@ -21,6 +21,7 @@ export class InputManager {
         if (a && ACTIONS.includes(a)) this.slots[0].taps[a]++;
         if (e.code === 'Escape' || e.code === 'KeyP') this.emit('pause');
         if (e.code === 'KeyC') this.emit('camera');
+        if (e.code === 'KeyT') { e.preventDefault(); this.emit('chat'); }
         if (a === 'skip') this.emit('skip');
       }
       this.keys.add(e.code);
@@ -45,6 +46,10 @@ export class InputManager {
       if (k.has('KeyW') || k.has('ArrowUp')) sy += 1;
       if (k.has('KeyS') || k.has('ArrowDown')) sy -= 1;
       for (const [code, a] of Object.entries(KEYMAP)) if (k.has(code) && a in held) held[a] = true;
+    }
+    if (slot === 0 && this.touch) {
+      sx += this.touch.sx; sy += this.touch.sy;
+      for (const a of Object.keys(held)) if (this.touch.held[a]) held[a] = true;
     }
     const pad = this.pads()[slot];
     if (pad) {
@@ -82,6 +87,7 @@ export const CONTROLS_HTML = `
   <div><kbd>F</kbd></div><div>개인기 (페인트)</div>
   <div><kbd>Q</kbd></div><div>선수 변경</div>
   <div><kbd>C</kbd></div><div>카메라 전환</div>
+  <div><kbd>T</kbd></div><div>채팅 (온라인)</div>
   <div><kbd>Space</kbd></div><div>리플레이/세리머니 스킵</div>
   <div><kbd>Esc</kbd></div><div>일시정지</div>
 </div>

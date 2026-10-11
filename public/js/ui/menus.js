@@ -3,6 +3,7 @@ import { LEAGUES, CLUB_BY_ID, ALL_CLUBS } from '/shared/data/leagues.js';
 import { generateSquad, teamRating, buildTeam, kitColors } from '/shared/squad.js';
 import { esc, toast, crest, stars, modal } from './dom.js';
 import { CONTROLS_HTML } from '../game/input.js';
+import { TOUCH_HELP_HTML, detectDevice } from '../game/touch.js';
 
 const ratingCache = new Map();
 export function clubOvr(id) { if (!ratingCache.has(id)) ratingCache.set(id, teamRating(generateSquad(id))); return ratingCache.get(id); }
@@ -50,8 +51,9 @@ export function mainMenu(app) {
       <div class="spacer"></div>
       <div class="panel" style="width:330px;align-self:flex-end">
         <h3>조작 요약</h3>
-        <div class="small" style="line-height:1.9"><b>WASD</b> 이동 · <b>Shift</b> 스프린트<br><b>J</b> 패스/태클 · <b>K</b> 슛/슬라이딩<br><b>L</b> 스루패스 · <b>I</b> 로빙/크로스<br><b>E+K</b> 감아차기 · <b>F</b> 개인기 · <b>Q</b> 선수변경<br><b>C</b> 카메라 · <b>Esc</b> 일시정지</div>
-        <p class="small muted" style="margin-bottom:0">게임패드도 지원합니다 (Xbox/PS 표준 배치).</p>
+        <div class="small touch-only" style="line-height:1.9">왼쪽 화면을 눌러 <b>조이스틱</b>으로 이동<br>오른쪽 <b>패스 · 슛 · 스루 · 로빙</b> 버튼<br><b>슛</b>은 길게 누를수록 강하게<br>수비 시 버튼이 <b>태클 · 슬라이딩</b>으로 바뀝니다<br>설정에서 기기 유형과 버튼 크기 변경 가능</div>
+        <div class="small kb-only" style="line-height:1.9"><b>WASD</b> 이동 · <b>Shift</b> 스프린트<br><b>J</b> 패스/태클 · <b>K</b> 슛/슬라이딩<br><b>L</b> 스루패스 · <b>I</b> 로빙/크로스<br><b>E+K</b> 감아차기 · <b>F</b> 개인기 · <b>Q</b> 선수변경<br><b>C</b> 카메라 · <b>Esc</b> 일시정지</div>
+        <p class="small muted kb-only" style="margin-bottom:0">게임패드도 지원합니다 (Xbox/PS 표준 배치).</p>
       </div>
     </div></div>`);
   bindGo(app, root);
@@ -109,6 +111,9 @@ export function settingsScreen(app) {
     <div class="grid2">
       <div class="panel col">
         <h3>게임</h3>
+        <label class="fld">기기 유형 (화면 배치 · 조작 방식)<select class="inp" id="dev"><option value="auto">자동 감지</option><option value="pc">PC (키보드 · 게임패드)</option><option value="tablet">태블릿 (터치)</option><option value="phone">휴대폰 (터치)</option></select></label>
+        <label class="fld">터치 버튼 크기 <input type="range" min="0.75" max="1.35" step="0.05" id="tsc"></label>
+        <div class="small muted" id="devinfo"></div>
         <label class="fld">기본 카메라<select class="inp" id="cam"><option value="broadcast">방송 카메라</option><option value="close">근접 카메라</option><option value="pro">선수 시점 (프로)</option></select></label>
         <label class="fld">기본 난이도<select class="inp" id="diff">${DIFFS.map((d, i) => `<option value="${i}">${d}</option>`).join('')}</select></label>
         <label class="fld">마스터 볼륨 <input type="range" min="0" max="1" step="0.05" id="vol"></label>
@@ -117,12 +122,17 @@ export function settingsScreen(app) {
         <label class="row small"><input type="checkbox" id="sh"> 실시간 그림자 (재시작 필요)</label>
         <div class="row"><button class="btn primary" id="save">저장</button><button class="btn" id="reload">저장 후 재시작</button></div>
       </div>
-      <div class="panel"><h3>조작법</h3>${CONTROLS_HTML}</div>
+      <div class="panel"><h3>조작법</h3><div class="kb-only">${CONTROLS_HTML}</div><div class="touch-only">${TOUCH_HELP_HTML}</div></div>
     </div></div>`);
   bindGo(app, root);
   root.querySelector('#cam').value = s.camera; root.querySelector('#diff').value = String(s.difficulty); root.querySelector('#vol').value = s.volume;
   root.querySelector('#q').value = String(s.quality); root.querySelector('#sh').checked = s.shadows;
-  const apply = () => { s.camera = root.querySelector('#cam').value; s.difficulty = +root.querySelector('#diff').value; s.volume = +root.querySelector('#vol').value; s.quality = +root.querySelector('#q').value; s.shadows = root.querySelector('#sh').checked; app.saveSettings(); };
+  root.querySelector('#dev').value = s.device || 'auto'; root.querySelector('#tsc').value = s.touchScale || 1;
+  const devName = { pc: 'PC', tablet: '태블릿', phone: '휴대폰' };
+  const showDev = () => { root.querySelector('#devinfo').textContent = `현재 적용: ${devName[app.device]} (자동 감지 결과: ${devName[detectDevice()]})`; };
+  showDev();
+  root.querySelector('#dev').onchange = () => { s.device = root.querySelector('#dev').value; app.saveSettings(); app.applyDevice(); showDev(); toast(`${devName[app.device]} 모드로 전환했습니다.`); };
+  const apply = () => { s.camera = root.querySelector('#cam').value; s.difficulty = +root.querySelector('#diff').value; s.volume = +root.querySelector('#vol').value; s.quality = +root.querySelector('#q').value; s.shadows = root.querySelector('#sh').checked; s.device = root.querySelector('#dev').value; s.touchScale = +root.querySelector('#tsc').value; app.saveSettings(); app.applyDevice(); };
   root.querySelector('#vol').oninput = () => { app.audio.ensure(); app.audio.setVolume(+root.querySelector('#vol').value); };
   root.querySelector('#save').onclick = () => { apply(); toast('설정이 저장되었습니다.'); };
   root.querySelector('#reload').onclick = () => { apply(); location.reload(); };
