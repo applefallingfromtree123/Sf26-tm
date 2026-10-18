@@ -1549,6 +1549,7 @@ export class Match {
       extra.direct = !extra.indirect && dg < 34;
     }
     this.sp = { type, team, taker: taker ? taker.i : -1, x, z, wait: false, ...extra };
+    for (const c of this.controllers) { c.charging = false; c.charge = 0; } // a shot held in open play must not fire the set piece
     this.sp.wait = this.controllers.some(c => c.team === team && (c.lock < 0 || (taker && this.teamPlayer(team, c.lock) === taker)));
     if (b.owner >= 0) b.owner = -1;
     this.assignSetpieceControl();
@@ -1601,11 +1602,14 @@ export class Match {
         const m = hyp(inp.mx || 0, inp.mz || 0);
         const ax = m > 0.2 ? inp.mx / m : Math.cos(taker.face), az = m > 0.2 ? inp.mz / m : Math.sin(taker.face);
         if (m > 0.2) taker.aimA = Math.atan2(az, ax);
-        const canShoot = sp.type === 'penalty' || (sp.type === 'freekick' && sp.direct);
+        // every free kick accepts a held shot: direct ones strike at goal (any distance),
+        // indirect ones turn the charged kick into a driven long ball in the aimed direction
+        const canShoot = sp.type === 'penalty' || sp.type === 'freekick';
         if (canShoot) {
           if (this.tapped(ci, inp, 'shoot') || (inp.shoot && !c.charging)) { c.charging = true; c.charge = Math.max(c.charge, 0.05); }
           if (c.charging) {
             if (inp.shoot) c.charge = Math.min(1.15, c.charge + dt / 0.95);
+            else if (sp.type === 'freekick' && sp.indirect) { this.executeSetPiece({ act: 'lob', ax, az }); c.charging = false; c.charge = 0; return; }
             else { this.executeSetPiece({ act: 'shoot', ax, az, power: Math.max(0.3, c.charge), finesse: !!inp.finesse, aimZ: m > 0.25 ? clamp(inp.mz / Math.max(m, 0.5) * (sp.type === 'penalty' ? 2.7 : 3.2), -3.2, 3.2) : null }); c.charging = false; c.charge = 0; return; }
           }
         }
