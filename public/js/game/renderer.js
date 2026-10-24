@@ -1,6 +1,7 @@
 // Three.js renderer: scene/lighting, stadium, 22 players + ball driven by engine snapshots.
 import * as THREE from 'three';
 import { buildStadium, buildSky } from './stadium.js';
+import { PostFX } from './post.js';
 import { createPlayer, animatePlayer, makeKitMaterials, makeIndicator, makeLabel, disposePlayer } from './playerModel.js';
 
 const GK_KITS = [['#1fd26a', '#0b3d22'], ['#ffd400', '#222222'], ['#ff4fa3', '#2a0a1a'], ['#00c2ff', '#08263a'], ['#ff7a00', '#221100'], ['#9b5cff', '#1b1033']];
@@ -8,6 +9,7 @@ const GK_KITS = [['#1fd26a', '#0b3d22'], ['#ffd400', '#222222'], ['#ff4fa3', '#2
 function ballTexture() {
   const c = document.createElement('canvas'); c.width = 512; c.height = 256;
   const g = c.getContext('2d');
+  g.imageSmoothingQuality = 'high';
   g.fillStyle = '#f7f7f5'; g.fillRect(0, 0, 512, 256);
   // icosahedron vertex directions -> pentagon panels in equirect space
   const t = (1 + Math.sqrt(5)) / 2;
@@ -28,7 +30,7 @@ function ballTexture() {
   g.strokeStyle = '#00d18f'; g.lineWidth = 5;
   for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(i * 90 + 30, 128, 40, 0.2, 1.6); g.stroke(); }
   g.strokeStyle = '#ff3c5f'; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(i * 90 + 70, 128, 30, 3.4, 4.8); g.stroke(); }
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   return tex;
 }
 
@@ -37,11 +39,12 @@ export class Renderer {
     this.settings = settings;
     this.canvas = canvas;
     const hq = (settings.quality ?? 1) >= 1;
-    this.gl = new THREE.WebGLRenderer({ canvas, antialias: hq, powerPreference: 'high-performance' });
+    this.ultra = (settings.quality ?? 1) >= 2;
+    this.gl = new THREE.WebGLRenderer({ canvas, antialias: hq && !this.ultra, powerPreference: 'high-performance' });
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, hq ? 2 : 1.5));
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.gl.toneMapping = THREE.ACESFilmicToneMapping;
-    this.gl.toneMappingExposure = 1.05;
+    this.gl.toneMappingExposure = this.ultra ? 0.92 : 1.05;
     this.gl.shadowMap.enabled = settings.shadows !== false;
     this.gl.shadowMap.type = THREE.PCFShadowMap;
     this.scene = new THREE.Scene();
@@ -59,9 +62,16 @@ export class Renderer {
     this.sky = buildSky(this.scene, true);
     this.stadium = buildStadium(this.scene, this.gl, { quality: settings.quality ?? 1 });
     this.scene.fog = new THREE.Fog(0x0b1328, 180, 520);
+    if (this.ultra) {
+      this.post = new PostFX(this.gl, this.scene, this.camera);
+      this.post.setNight(true);
+      this.buildEnvironment();
+    }
     // ball
     this.ballTex = ballTexture();
-    this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 32, 20), new THREE.MeshStandardMaterial({ map: this.ballTex, roughness: 0.45, metalness: 0 }));
+    this.ball = new THREE.Mesh(new THREE.SphereGeometry(0.11, 48, 32), this.ultra
+      ? new THREE.MeshPhysicalMaterial({ map: this.ballTex, roughness: 0.4, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.25 })
+      : new THREE.MeshStandardMaterial({ map: this.ballTex, roughness: 0.45, metalness: 0 }));
     this.ball.castShadow = true;
     this.scene.add(this.ball);
     this.ballPrev = new THREE.Vector3();
@@ -90,8 +100,39 @@ export class Renderer {
     fill.position.set(40, 70, -50);
     const fill2 = new THREE.DirectionalLight(0xffffff, night ? 0.5 : 0.2); fill2.position.set(-60, 50, -20);
     this.lights = [hemi, key, fill, fill2];
+    if (this.ultra) {
+      key.shadow.mapSize.set(8192, 8192); key.shadow.radius = 4; key.shadow.blurSamples = 16;
+      if (night) {
+        // four corner floodlight banks, each casting its own soft shadow (the classic night-match shadow star)
+        key.intensity = 1.15; hemi.intensity = 0.4; fill.intensity = 0.25; fill2.intensity = 0.12;
+        for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+          const sp = new THREE.SpotLight(0xfff6ea, 0.95, 0, Math.PI / 4.2, 0.65, 0);
+          sp.position.set(sx * 74, 52, sz * 56);
+          sp.target.position.set(sx * -6, 0, sz * -5);
+          sp.castShadow = true; sp.shadow.mapSize.set(2048, 2048); sp.shadow.bias = -0.0002; sp.shadow.normalBias = 0.03; sp.shadow.radius = 5;
+          sp.shadow.camera.near = 40; sp.shadow.camera.far = 220;
+          this.lights.push(sp, sp.target);
+        }
+      }
+    }
     for (const l of this.lights) this.scene.add(l);
     this.key = key;
+  }
+  // image-based lighting captured from the stadium itself (kit sheen, ball and boot reflections)
+  buildEnvironment() {
+    if (this.stadium?.beams) this.stadium.beams.visible = this.night;
+    if (!this.ultra) return;
+    if (this.envRT) this.envRT.dispose();
+    const pm = new THREE.PMREMGenerator(this.gl);
+    const hidden = [this.ball, this.ballShadow, this.indicator, this.indicator2, this.label].filter(Boolean);
+    hidden.forEach(o => { o.userData.wasVisible = o.visible; o.visible = false; });
+    const fog = this.scene.fog; this.scene.fog = null;
+    this.envRT = pm.fromScene(this.scene, 0.04, 0.5, 900);
+    this.scene.fog = fog;
+    hidden.forEach(o => { o.visible = o.userData.wasVisible; });
+    pm.dispose();
+    this.scene.environment = this.envRT.texture;
+    this.scene.environmentIntensity = this.night ? 0.35 : 0.6;
   }
   setNight(night) {
     if (this.night === night) return;
@@ -99,6 +140,7 @@ export class Renderer {
     this.setupLights(night);
     this.sky.dispose(); this.sky = buildSky(this.scene, night);
     this.scene.fog.color.set(night ? 0x0b1328 : 0xaec8e6);
+    if (this.post) { this.post.setNight(night); this.buildEnvironment(); }
   }
   setStadiumColors(c1, c2, a1, a2) {
     const key = `${c1}${c2}${a1}`;
@@ -106,12 +148,18 @@ export class Renderer {
     this.stadiumKey = key;
     this.stadium.dispose();
     this.stadium = buildStadium(this.scene, this.gl, { quality: this.settings.quality ?? 1, homeColor: c1, homeColor2: c2, awayColor: a1, awayColor2: a2 });
+    this.buildEnvironment();
   }
 
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
     this.gl.setSize(w, h, false);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
+    if (this.post) this.post.setSize(w, h);
+  }
+  draw(dt, focus = null) {
+    if (this.post) this.post.render(dt, this.time, focus);
+    else this.gl.render(this.scene, this.camera);
   }
 
   clearTeams() {
@@ -140,14 +188,14 @@ export class Renderer {
     // match officials: referee + two assistants
     const refKit = makeKitMaterials('#ff7a1a', '#151515', '#151515');
     this.officials = [0, 1, 2].map(k => {
-      const o = createPlayer({ id: 'ref' + k, name: k ? 'AR' : 'REF', num: '', skin: k % 3 }, refKit, { shadows, clubId: 'ref', clubShort: '', hi: (this.settings.quality ?? 1) >= 1 });
+      const o = createPlayer({ id: 'ref' + k, name: k ? 'AR' : 'REF', num: '', skin: k % 3 }, refKit, { shadows, clubId: 'ref', clubShort: '', hi: (this.settings.quality ?? 1) >= 1, ultra: this.ultra });
       o.userData.ref = { x: 0, z: k === 0 ? 8 : k === 1 ? -(34 + 1.2) : 34 + 1.2, vx: 0, vz: 0, face: 0 };
       this.scene.add(o); return o;
     });
   }
   makePlayerModel(team, info, gk, club) {
     const [kit, gkKit] = this.kitMats[team];
-    return createPlayer({ ...info }, gk ? gkKit : kit, { gk, shadows: this.settings.shadows !== false, clubId: club?.id, clubShort: club?.short, hi: (this.settings.quality ?? 1) >= 1 });
+    return createPlayer({ ...info }, gk ? gkKit : kit, { gk, shadows: this.settings.shadows !== false, clubId: club?.id, clubShort: club?.short, hi: (this.settings.quality ?? 1) >= 1, ultra: this.ultra });
   }
   // substitution: rebuild one player's model with the new player's name/number
   replacePlayer(i, info, team, gk) {
@@ -196,7 +244,7 @@ export class Renderer {
       this.camera.position.set(Math.cos(a) * 52, 16 + Math.sin(this.time * 0.1) * 3, Math.sin(a) * 34);
       this.camera.fov = 50; this.camera.updateProjectionMatrix();
       this.camera.lookAt(-Math.cos(a) * 20, 6, -Math.sin(a) * 14);
-      this.gl.render(this.scene, this.camera);
+      this.draw(dt);
       return;
     }
     // players
@@ -239,7 +287,10 @@ export class Renderer {
     else this.indicator2.visible = false;
 
     this.updateCamera(dt, snap, ctx);
-    this.gl.render(this.scene, this.camera);
+    // depth of field on cinematic cameras: focus on the ball / action
+    const mode = ctx.replay ? 'replay' : (ctx.cam || this.camMode);
+    const focus = this.ultra && (mode === 'replay' || mode === 'goal') ? this.camera.position.distanceTo(this.ball.position) : null;
+    this.draw(dt, focus);
   }
 
   updateCamera(dt, snap, ctx) {
@@ -283,6 +334,11 @@ export class Renderer {
       this.camPos.lerp(pos, Math.min(1, dt * 2.6)); this.camLook.lerp(look, Math.min(1, dt * 3.6));
     }
     cam.position.copy(this.camPos);
+    if (this.ultra && mode !== 'replay') { // operator hand-held drift
+      const t = this.time;
+      cam.position.x += Math.sin(t * 0.37) * 0.12 + Math.sin(t * 1.13) * 0.04;
+      cam.position.y += Math.sin(t * 0.51 + 1) * 0.08;
+    }
     cam.lookAt(this.camLook);
     cam.fov += (fov - cam.fov) * Math.min(1, dt * 2.5);
     cam.updateProjectionMatrix();

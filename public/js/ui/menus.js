@@ -120,7 +120,7 @@ export function settingsScreen(app) {
         <label class="fld">기본 난이도<select class="inp" id="diff">${DIFFS.map((d, i) => `<option value="${i}">${d}</option>`).join('')}</select></label>
         <label class="fld">마스터 볼륨 <input type="range" min="0" max="1" step="0.05" id="vol"></label>
         <h3 style="margin-top:10px">그래픽</h3>
-        <label class="fld">품질 (재시작 필요)<select class="inp" id="q"><option value="1">높음 (4K 잔디 텍스처, 풀 관중)</option><option value="0">보통 (저사양 PC)</option></select></label>
+        <label class="fld">품질 (재시작 필요)<select class="inp" id="q"><option value="2">울트라 (AAA: 포스트 프로세싱 · 3D 잔디 · 조명탑 그림자 · 고정밀 선수)</option><option value="1">높음 (4K 잔디 텍스처, 풀 관중)</option><option value="0">보통 (저사양 PC)</option></select></label>
         <label class="row small"><input type="checkbox" id="sh"> 실시간 그림자 (재시작 필요)</label>
         <div class="row"><button class="btn primary" id="save">저장</button><button class="btn" id="reload">저장 후 재시작</button></div>
       </div>

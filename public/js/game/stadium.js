@@ -103,8 +103,8 @@ function ledTexture(names) {
 }
 
 // ---------- crowd ----------
-function crowdMaterial() {
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: false });
+function crowdMaterial(ultra) {
+  const mat = ultra ? new THREE.MeshStandardMaterial({ roughness: 0.85 }) : new THREE.MeshLambertMaterial({ vertexColors: false });
   mat.userData.uniforms = { uTime: { value: 0 }, uExcite: { value: 0.2 } };
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = mat.userData.uniforms.uTime;
@@ -116,6 +116,31 @@ function crowdMaterial() {
       transformed.x += sin(uTime * 2.0 + hh * 30.0) * 0.03 * uExcite;`);
   };
   return mat;
+}
+function fanGeometryUltra() { // rounded torso, shoulders, arms and head
+  const torso = new THREE.CapsuleGeometry(0.16, 0.28, 3, 10); torso.scale(1.15, 1, 0.75); torso.translate(0, 0.36, 0);
+  const head = new THREE.SphereGeometry(0.105, 10, 8); head.translate(0, 0.78, 0.01);
+  const armL = new THREE.CapsuleGeometry(0.055, 0.32, 2, 6); armL.translate(-0.23, 0.36, 0.03);
+  const armR = armL.clone(); armR.translate(0.46, 0, 0);
+  for (const g of [torso, head, armL, armR]) { g.deleteAttribute('uv'); }
+  return mergeGeometries([torso, head, armL, armR]);
+}
+// soft additive light shaft (fades toward silhouette edges and toward the ground)
+function beamMaterial() {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+    uniforms: { uColor: { value: new THREE.Color(0xfff3dc) }, uOpacity: { value: 0.022 } },
+    vertexShader: 'varying vec3 vN; varying vec3 vV; varying float vH; varying float vD; void main(){ vec4 wp = modelMatrix * vec4(position,1.0); vN = normalize(mat3(modelMatrix) * normal); vV = normalize(cameraPosition - wp.xyz); vH = uv.y; vD = distance(cameraPosition, wp.xyz); gl_Position = projectionMatrix * viewMatrix * wp; }',
+    fragmentShader: 'uniform vec3 uColor; uniform float uOpacity; varying vec3 vN; varying vec3 vV; varying float vH; varying float vD; void main(){ float f = pow(abs(dot(normalize(vN), normalize(vV))), 2.0); float a = f * uOpacity * smoothstep(0.0, 0.9, vH) * smoothstep(25.0, 70.0, vD); gl_FragColor = vec4(uColor * a, a); }',
+  });
+}
+// alpha "blade" field for the layered turf (shell texturing)
+function bladeTexture() {
+  const N = 512, c = canvas(N, N), g = c.getContext('2d'), img = g.createImageData(N, N);
+  for (let i = 0; i < N * N; i++) { const v = Math.random(); const k = i * 4; img.data[k] = img.data[k + 1] = img.data[k + 2] = 255; img.data[k + 3] = Math.pow(v, 0.8) * 255; }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.LinearMipmapLinearFilter;
+  return t;
 }
 function fanGeometry() {
   const body = new THREE.BoxGeometry(0.44, 0.62, 0.28); body.translate(0, 0.31, 0);
@@ -129,6 +154,7 @@ export function buildStadium(scene, renderer, opts = {}) {
   const group = new THREE.Group(); group.name = 'stadium';
   scene.add(group);
   const quality = opts.quality ?? 1;
+  const ultra = quality >= 2;
   const home = new THREE.Color(opts.homeColor || '#c8102e');
   const away = new THREE.Color(opts.awayColor || '#1d428a');
 
@@ -143,6 +169,18 @@ export function buildStadium(scene, renderer, opts = {}) {
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(AX, AZ), pitchMat);
   pitch.rotation.x = -Math.PI / 2; pitch.receiveShadow = true;
   group.add(pitch);
+  if (ultra) { // 3-D turf: stacked alpha-tested shells over the pitch, darker at the roots
+    const blades = bladeTexture(); blades.repeat.set(AX / 1.6, AZ / 1.6);
+    const geo = new THREE.PlaneGeometry(AX, AZ);
+    const SH = 16;
+    for (let i = 1; i <= SH; i++) {
+      const t = i / SH;
+      const m = new THREE.MeshStandardMaterial({ map: tex, alphaMap: blades, alphaTest: 0.08 + t * 0.86, roughness: 0.85 - t * 0.15, color: new THREE.Color().setScalar(0.72 + t * 0.4) });
+      const shell = new THREE.Mesh(geo, m);
+      shell.rotation.x = -Math.PI / 2; shell.position.y = t * 0.028; shell.receiveShadow = true;
+      group.add(shell);
+    }
+  }
   // running track / concrete rim around grass
   const rimMat = new THREE.MeshStandardMaterial({ color: 0x2a2f36, roughness: 0.9 });
   for (const s of [-1, 1]) {
@@ -154,8 +192,8 @@ export function buildStadium(scene, renderer, opts = {}) {
   const seatMatA = new THREE.MeshStandardMaterial({ color: home.clone().multiplyScalar(0.55), roughness: 0.8 });
   const seatMatB = new THREE.MeshStandardMaterial({ color: home.clone().multiplyScalar(0.35), roughness: 0.8 });
   const concrete = new THREE.MeshStandardMaterial({ color: 0x3a3f4a, roughness: 0.95 });
-  const fanGeo = fanGeometry();
-  const crowdMat = crowdMaterial();
+  const fanGeo = ultra ? fanGeometryUltra() : fanGeometry();
+  const crowdMat = crowdMaterial(ultra);
   const fanSpots = [];
   const standGeoA = [], standGeoB = [], concreteGeo = [];
   const palette = [home, home, home, new THREE.Color(opts.homeColor2 || '#ffffff'), new THREE.Color('#1c1c1c'), new THREE.Color('#dddddd'), new THREE.Color('#2b4f8a')];
@@ -174,7 +212,7 @@ export function buildStadium(scene, renderer, opts = {}) {
       const spacing = 0.62;
       const n = Math.floor(length / spacing);
       for (let i = 0; i < n; i++) {
-        if (Math.random() > (quality >= 1 ? 0.93 : 0.4)) continue;
+        if (Math.random() > (ultra ? 0.97 : quality >= 1 ? 0.93 : 0.4)) continue;
         const x = -length / 2 + (i + 0.5) * spacing + (Math.random() - 0.5) * 0.12;
         const isAway = awayBlock && x > length * 0.18;
         const col = isAway ? awayPal[(Math.random() * awayPal.length) | 0] : palette[(Math.random() * palette.length) | 0];
@@ -267,6 +305,33 @@ export function buildStadium(scene, renderer, opts = {}) {
   crowd.instanceMatrix.needsUpdate = true;
   group.add(crowd);
 
+  // corner floodlight banks with glowing lamp heads and light shafts (ultra)
+  const beams = new THREE.Group(); beams.visible = false;
+  if (ultra) {
+    const lampMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.6, metalness: 0.6 });
+    const bMat = beamMaterial();
+    for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      const P = new THREE.Vector3(sx * 74, 52, sz * 56), T = new THREE.Vector3(sx * -6, 0, sz * -5);
+      const bank = new THREE.Group(); bank.position.copy(P); bank.lookAt(T);
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(9, 4.2, 0.6), frameMat); bank.add(frame);
+      for (let r = 0; r < 3; r++) for (let c = 0; c < 6; c++) {
+        const l = new THREE.Mesh(new THREE.CircleGeometry(0.55, 16), lampMat); l.position.set(-3.5 + c * 1.4, -1.3 + r * 1.3, 0.32); bank.add(l);
+      }
+      const glow = new THREE.Sprite(glowMat); glow.scale.set(26, 26, 1); glow.position.set(0, 0, 1.2); bank.add(glow);
+      group.add(bank);
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, P.y, 10), frameMat); pole.position.set(P.x * 1.04, P.y / 2, P.z * 1.04); group.add(pole);
+      // light shaft cone from the bank to the pitch
+      const len = P.distanceTo(T) * 0.92;
+      const cone = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 26, len, 32, 1, true), bMat);
+      cone.position.copy(P).lerp(T, 0.46);
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), T.clone().sub(P).normalize());
+      cone.renderOrder = 5;
+      beams.add(cone);
+    }
+    group.add(beams);
+  }
+
   // LED ad boards around the pitch
   const adTex = ledTexture(['SF2027', 'NEXUS ENERGY', 'ORBIT BANK', 'VOLTA DRINKS', 'KAIROS AIR', 'HALO MOBILE', 'ZENITH TYRES', 'PIXELFORGE']);
   const boards = [];
@@ -323,7 +388,7 @@ export function buildStadium(scene, renderer, opts = {}) {
   }
 
   return {
-    group, crowdMat, boards, goals, pitchMat,
+    group, crowdMat, boards, goals, pitchMat, beams,
     update(dt, t, excite) {
       crowdMat.userData.uniforms.uTime.value = t;
       crowdMat.userData.uniforms.uExcite.value = excite;

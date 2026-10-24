@@ -18,7 +18,7 @@ const bar = document.querySelector('.boot-bar i');
 const msg = document.querySelector('.boot-msg');
 const progress = (p, t) => { bar.style.width = `${p}%`; if (t) msg.textContent = t; };
 
-const DEFAULT_SETTINGS = { volume: 0.7, camera: 'broadcast', difficulty: 2, quality: 1, shadows: true, night: true, device: 'auto', touchScale: 1 };
+const DEFAULT_SETTINGS = { volume: 0.7, camera: 'broadcast', difficulty: 2, quality: 2, shadows: true, night: true, device: 'auto', touchScale: 1 };
 const saved = LS.get('sf_settings', null);
 const settings = { ...DEFAULT_SETTINGS, ...(saved || {}) };
 // first launch on a tablet/phone: lighter graphics defaults
@@ -26,6 +26,8 @@ if (!saved) {
   const d = detectDevice();
   if (d !== 'pc') { settings.quality = 0; settings.shadows = d === 'tablet'; }
 }
+// one-time upgrade: PCs on the old "high" preset move to the new Ultra (AAA) graphics
+if (saved && !saved.gfx2) { if (saved.quality === 1 && detectDevice() === 'pc') settings.quality = 2; settings.gfx2 = true; LS.set('sf_settings', settings); }
 
 const app = {
   settings, api,
