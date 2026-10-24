@@ -104,7 +104,7 @@ export class Audio {
   update(fm, S, view, paused) {
     if (!this.ctx || !this.enabled) return;
     const now = this.ctx.currentTime;
-    const set = (param, v, tc = 0.08) => param.setTargetAtTime(paused ? 0 : v, now, tc);
+    const set = (param, v, tc = 0.08) => param.setTargetAtTime(paused || !Number.isFinite(v) ? 0 : v, now, tc);
     const inside = view === "cockpit" ? 0.55 : 1;
     const type = fm.spec.eng.type;
     let jet = 0, n1 = 0, prop = 0, rpm = 0;

@@ -9,11 +9,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=B612+Mono&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./cesium/Widgets/widgets.css" />
+    <link rel="stylesheet" href="./src/style.css" />
     <script>window.CESIUM_BASE_URL = "./cesium/";</script>
     <script src="./cesium/Cesium.js"></script>
   </head>
   <body>
     <div id="cesium"></div>
+    <canvas id="cockpit3d"></canvas>
     <canvas id="hud"></canvas>
 
     <!-- ============================== cockpit panel -->
@@ -42,8 +44,9 @@
           </div>
         </div>
         <nav id="tabs">
-          <button data-tab="plan" class="active">비행 계획</button>
-          <button data-tab="aircraft">항공기</button>
+          <button data-tab="plan" class="active">세계 지도 · 비행 계획</button>
+          <button data-tab="aircraft">항공기 · 제원</button>
+          <button data-tab="career">커리어</button>
           <button data-tab="load">연료 · 탑재</button>
           <button data-tab="weather">날씨 · 시간</button>
           <button data-tab="settings">설정</button>
@@ -53,7 +56,8 @@
 
       <main>
         <section id="tab-plan" class="tab active">
-          <div class="grid2">
+          <p class="hint globehint">🌍 오른쪽 지구본을 드래그·스크롤해 회전/확대하고, 공항 점을 클릭해 출발지·도착지를 고르세요. (대형 공항은 항상, 소형 비행장은 확대하면 표시)</p>
+          <div class="grid1">
             <div class="card">
               <h2>출발</h2>
               <label>공항 검색 (ICAO / IATA / 이름 / 도시)</label>
@@ -90,8 +94,20 @@
         </section>
 
         <section id="tab-aircraft" class="tab">
-          <div id="catChips" class="chips"></div>
-          <div id="acList" class="aclist"></div>
+          <div class="acwrap">
+            <div class="acleft">
+              <div id="catChips" class="chips"></div>
+              <div id="acList" class="aclist"></div>
+            </div>
+            <div class="acright card">
+              <canvas id="hangar"></canvas>
+              <div id="livChips" class="chips livchips"></div>
+              <div id="specSheet"></div>
+            </div>
+          </div>
+        </section>
+        <section id="tab-career" class="tab">
+          <div id="careerView"></div>
         </section>
 
         <section id="tab-load" class="tab">
@@ -176,8 +192,8 @@
               <select id="setQuality">
                 <option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option><option value="ultra">최상 (그림자 · HDR)</option>
               </select>
-              <label>시야각 FOV <span id="fovLbl"></span></label>
-              <input id="setFov" type="range" min="40" max="90" value="60" />
+              <label>세로 시야각 FOV <span id="fovLbl"></span></label>
+              <input id="setFov" type="range" min="30" max="80" value="50" />
               <label>음량 <span id="volLbl"></span></label>
               <input id="setVol" type="range" min="0" max="100" value="70" />
               <label>기압 단위</label>
@@ -228,6 +244,7 @@
     </div>
     <div id="help" class="overlay hidden"><div class="dialog wide"><h2>조작법</h2><table class="keys" id="helpTable"></table><button data-act="close">닫기 (H)</button></div></div>
     <div id="checklist" class="floating hidden"></div>
+    <div id="globePop" class="hidden"></div>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

@@ -11,6 +11,7 @@ export class RunwayEnd {
   constructor(apt, raw, reversed) {
     const [le, he, lenFt, widFt, surf, leLat, leLon, leE, hdg, heLat, heLon, heE, leDisp, heDisp, lit] = raw;
     this.apt = apt;
+    this.reversed = reversed;
     this.ident = reversed ? he : le;
     this.oppIdent = reversed ? le : he;
     this.lengthM = lenFt * FT;
@@ -87,7 +88,7 @@ export class Airport {
   }
   /** Physical runways (one per pair) for lighting. */
   get physicalRunways() {
-    return this.runways.filter((_, i) => i % 2 === 0 || !this.rawRunways[Math.floor(i / 2)]?.[1]);
+    return this.runways.filter((r) => !r.reversed);
   }
 }
 
@@ -160,6 +161,45 @@ export class NavDB {
     }
     res.sort((x, y) => x[0] - y[0]);
     return res.slice(0, max).map((x) => x[1]);
+  }
+
+  /**
+   * Airport flattening: surveyed runway elevation and blend weight (0..1) at a
+   * point (radians). Runway strips (+60 m shoulders/overrun) are flat; terrain
+   * blends back to the DEM over 250 m.
+   */
+  runwayFlatten(lat, lon) {
+    const la0 = Math.floor(lat * RAD), lo0 = Math.floor(lon * RAD);
+    let best = null, bestW = 0;
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const list = this.grid.get(`${la0 + i}:${lo0 + j}`);
+      if (!list) continue;
+      for (const a of list) {
+        if (a.type > 3) continue;
+        if (Math.abs(a.lat - lat) > 0.0012 * Math.max(1, a.rawRunways.reduce((m, r) => Math.max(m, r[2]), 0) / 6000)) continue;
+        if (Math.abs(a.lon - lon) * Math.cos(lat) > 0.0012 * Math.max(1, a.rawRunways.reduce((m, r) => Math.max(m, r[2]), 0) / 6000)) continue;
+        for (const rw of a.physicalRunways) {
+          if (rw.surface === 2) continue;
+          // flat-earth local frame at the threshold
+          const n = (lat - rw.lat) * 6371000, e = (lon - rw.lon) * 6371000 * rw.cosLat;
+          const cx = Math.cos(rw.course), sx = Math.sin(rw.course);
+          const x = n * cx + e * sx, y = -n * sx + e * cx;
+          const hw = rw.widthM / 2 + 60;
+          const dx = x < -60 ? -60 - x : x > rw.lengthM + 60 ? x - rw.lengthM - 60 : 0;
+          const dy = Math.max(Math.abs(y) - hw, 0);
+          const d = Math.hypot(dx, dy);
+          if (d > 250) continue;
+          const t = Math.min(Math.max(d / 250, 0), 1);
+          const w = 1 - t * t * (3 - 2 * t);
+          if (w > bestW) {
+            const f = Math.min(Math.max(x / rw.lengthM, 0), 1);
+            bestW = w;
+            best = rw.elevM + (rw.endElevM - rw.elevM) * f;
+          }
+        }
+      }
+    }
+    return bestW > 0 ? [best, bestW] : null;
   }
 
   navaidsNear(lat, lon, radiusM = 300000, max = 60) {

@@ -215,7 +215,7 @@ export function buildAircraftGeometry(spec, cgHeight, livery) {
     const x = nose - t * noseLen;
     const shape = spec.cat === "fighter" || spec.id === "concorde" ? Math.pow(t, 0.75) : Math.sqrt(Math.max(1 - (1 - t) ** 2.2, 0));
     const r = R * Math.max(shape, 0.03);
-    const zo = big ? -(1 - t) ** 2 * R * 0.25 : -(1 - t) ** 2 * R * 0.1;
+    const zo = -((1 - t) ** 2) * R * (big ? 0.25 : 0.1);
     st.push([x, r, r * rzScale, zo]);
   }
   st.push([(nose - noseLen + midEnd) / 2, R, R * rzScale, 0]);

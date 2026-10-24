@@ -1,7 +1,7 @@
 // CesiumJS world: real-world imagery and terrain streaming, sun/atmosphere,
 // weather (fog, clouds), airport lighting, the aircraft model and cameras.
 
-import { TerrariumTerrainProvider } from "./terrain.js";
+import { TerrariumTerrainProvider, TerrainSampler } from "./terrain.js";
 import { buildAircraftGeometry } from "./model.js";
 import { qRot } from "../sim/math.js";
 
@@ -144,53 +144,64 @@ export class World {
       if (kind === "ion" && this.settings.ionToken) tp = await Cesium.CesiumTerrainProvider.fromIonAssetId(1, { requestVertexNormals: true, requestWaterMask: true });
       else if (kind === "arcgis") tp = await Cesium.ArcGISTiledElevationTerrainProvider.fromUrl("https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer");
       else if (kind === "none") tp = new Cesium.EllipsoidTerrainProvider();
-      else tp = new TerrariumTerrainProvider();
+      else tp = new TerrariumTerrainProvider({ flatten: this.flattenHook() });
     } catch (e) {
       console.warn("terrain failed, using terrarium", e);
-      tp = new TerrariumTerrainProvider();
+      tp = new TerrariumTerrainProvider({ flatten: this.flattenHook() });
     }
     this.scene.terrainProvider = tp;
+    // physics elevation source (Terrarium data matches the default terrain; also a good proxy for other DEMs)
+    this.sampler = kind === "none" ? null : new TerrainSampler({ flatten: this.flattenHook() });
+  }
+
+  /** Airport flattening backed by the navigation database (set via setNavDB). */
+  flattenHook() {
+    return {
+      near: (lat, lon, r) => !!this.navdb?.ready && this.navdb.nearestAirports(lat, lon, r + 4000, 1).length > 0,
+      at: (lat, lon) => (this.navdb?.ready ? this.navdb.runwayFlatten(lat, lon) : null),
+    };
+  }
+  setNavDB(db) {
+    this.navdb = db;
   }
 
   // ------------------------------------------------------------------ ground queries
   /** Terrain/surface height (m) below lat/lon (radians). Returns undefined if not loaded. */
   groundHeight(lat, lon) {
-    const c = new Cesium.Cartographic(lon, lat);
-    let h;
-    if (this.use3dTiles && this.tileset) {
-      h = this.scene.sampleHeightSupported ? this.scene.sampleHeight(c, this.aircraftModel ? [this.aircraftModel] : undefined) : undefined;
+    if (this.use3dTiles && this.tileset && this.scene.sampleHeightSupported) {
+      const h = this.scene.sampleHeight(new Cesium.Cartographic(lon, lat), this.aircraftModel ? [this.aircraftModel] : undefined);
+      if (h != null) return h;
     }
-    if (h == null) h = this.scene.globe.getHeight(c);
-    return h;
+    if (this.settings.terrain === "none") return 0;
+    if (this.sampler) return this.sampler.heightAt(lat, lon);
+    return this.scene.globe.getHeight(new Cesium.Cartographic(lon, lat));
   }
 
   /** Wait until the terrain under a point is streamed at full detail. */
-  async waitForGround(lat, lon, fallback, onProgress, timeoutMs = 25000) {
+  async waitForGround(lat, lon, fallback, onProgress, timeoutMs = 20000) {
     const t0 = performance.now();
-    let last = undefined, stable = 0;
+    this.sampler?.prefetch(lat, lon);
+    let h;
     while (performance.now() - t0 < timeoutMs) {
       this.render();
-      const h = this.groundHeight(lat, lon);
+      h = this.groundHeight(lat, lon);
       const loaded = this.scene.globe.tilesLoaded && (!this.tileset || this.tileset.tilesLoaded);
-      onProgress?.(Math.min(0.99, (performance.now() - t0) / timeoutMs), loaded);
-      if (h != null && loaded) {
-        if (last != null && Math.abs(h - last) < 0.05) stable++;
-        else stable = 0;
-        last = h;
-        if (stable > 6) return h;
-      }
+      const el = performance.now() - t0;
+      onProgress?.(Math.min(0.99, el / timeoutMs), loaded);
+      // need the elevation; give imagery a few seconds to stream around the airport
+      if (h != null && (loaded || el > 6000)) return h;
       await new Promise((r) => setTimeout(r, 60));
     }
-    return this.groundHeight(lat, lon) ?? fallback;
+    return h ?? fallback;
   }
 
   // ------------------------------------------------------------------ aircraft model
-  async loadAircraft(spec, cgHeight) {
+  async loadAircraft(spec, cgHeight, livery) {
     if (this.aircraftModel) {
       this.scene.primitives.remove(this.aircraftModel);
       this.aircraftModel = null;
     }
-    const glb = buildAircraftGeometry(spec, cgHeight);
+    const glb = buildAircraftGeometry(spec, cgHeight, livery);
     const url = URL.createObjectURL(new Blob([glb], { type: "model/gltf-binary" }));
     const model = await Cesium.Model.fromGltfAsync({
       url,
@@ -426,6 +437,121 @@ export class World {
 
   render() {
     this.viewer.render();
+  }
+
+  // ------------------------------------------------------------------ globe airport picker (menu)
+  setMenuMode(on) {
+    this.menuMode = on;
+    if (this.smallPoints) this.smallPoints.show = on;
+    for (const e of this.routeMarks || []) e.show = on;
+    const ssc = this.scene.screenSpaceCameraController;
+    ssc.enableInputs = on;
+    ssc.enableCollisionDetection = on;
+    this.scene.camera.frustum.near = on ? 1 : 0.3;
+    if (this.airportPoints) this.airportPoints.show = on;
+    if (this.airportLabels) this.airportLabels.show = on;
+    if (this.routeEntity) this.routeEntity.show = on;
+    if (on && this.aircraftModel) this.aircraftModel.show = false;
+    if (on) this.scene.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  }
+
+  /** Plot airports on the globe; small fields appear when zoomed in. */
+  showAirports(navdb, onPick) {
+    const scene = this.scene;
+    this.navdb = navdb;
+    if (!this.airportPoints) {
+      this.airportPoints = scene.primitives.add(new Cesium.PointPrimitiveCollection());
+      this.airportLabels = scene.primitives.add(new Cesium.LabelCollection());
+      this.smallPoints = scene.primitives.add(new Cesium.PointPrimitiveCollection());
+    }
+    this.airportPoints.removeAll();
+    this.airportLabels.removeAll();
+    const C = Cesium.Color;
+    for (const a of navdb.airports) {
+      if (a.type > 2) continue;
+      const pos = Cesium.Cartesian3.fromRadians(a.lon, a.lat, a.elevM + 30);
+      const large = a.type === 1;
+      this.airportPoints.add({
+        position: pos, id: a, pixelSize: large ? 7 : 4.5,
+        color: large ? C.fromCssColorString("#2ee6ff") : C.fromCssColorString("#7fb7ff"),
+        outlineColor: C.BLACK, outlineWidth: 1,
+        scaleByDistance: new Cesium.NearFarScalar(2e5, 1.6, 1.5e7, 0.6),
+        disableDepthTestDistance: 5e6,
+      });
+      if (large) {
+        this.airportLabels.add({
+          position: pos, text: a.ident, font: "12px 'B612 Mono', monospace", fillColor: C.WHITE, outlineColor: C.BLACK, outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE, pixelOffset: new Cesium.Cartesian2(8, -8), id: a,
+          translucencyByDistance: new Cesium.NearFarScalar(1.5e6, 1, 6e6, 0),
+          disableDepthTestDistance: 5e6,
+        });
+      }
+    }
+    if (!this.pickHandler) {
+      this.pickHandler = new Cesium.ScreenSpaceEventHandler(scene.canvas);
+      this.pickHandler.setInputAction((e) => {
+        if (!this.menuMode) return;
+        const picked = scene.pick(e.position);
+        const apt = picked?.id && picked.id.ident ? picked.id : null;
+        this.onPick?.(apt, e.position);
+      }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+      scene.camera.moveEnd.addEventListener(() => this.refreshSmallAirports());
+    }
+    this.onPick = onPick;
+  }
+
+  refreshSmallAirports() {
+    if (!this.smallPoints || !this.navdb || !this.menuMode) return;
+    this.smallPoints.removeAll();
+    const cam = this.scene.camera;
+    const h = cam.positionCartographic.height;
+    if (h > 600000) return;
+    const c = cam.positionCartographic;
+    const C = Cesium.Color;
+    const list = this.navdb.nearestAirports(c.latitude, c.longitude, Math.min(h * 2.5, 600000), 2500);
+    for (const a of list) {
+      if (a.type <= 2) continue;
+      this.smallPoints.add({
+        position: Cesium.Cartesian3.fromRadians(a.lon, a.lat, a.elevM + 10), id: a, pixelSize: a.type === 4 ? 4 : 5,
+        color: a.type === 4 ? C.fromCssColorString("#ffb000") : a.type === 5 ? C.fromCssColorString("#3fa7ff") : C.fromCssColorString("#c9d2dc"),
+        outlineColor: C.BLACK, outlineWidth: 1, disableDepthTestDistance: 5e5,
+      });
+    }
+  }
+
+  /** Show departure/arrival markers and the great-circle route. */
+  showRoute(points, dep, arr) {
+    const v = this.viewer;
+    if (this.routeEntity) v.entities.remove(this.routeEntity);
+    for (const e of this.routeMarks || []) v.entities.remove(e);
+    this.routeMarks = [];
+    const mark = (apt, color, text) => {
+      if (!apt) return;
+      this.routeMarks.push(v.entities.add({
+        position: Cesium.Cartesian3.fromRadians(apt.lon, apt.lat, apt.elevM + 50),
+        point: { pixelSize: 12, color, outlineColor: Cesium.Color.BLACK, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+        label: { text, font: "13px 'Noto Sans KR', sans-serif", fillColor: Cesium.Color.WHITE, showBackground: true, backgroundColor: color.withAlpha(0.8), pixelOffset: new Cesium.Cartesian2(0, -22), disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      }));
+    };
+    mark(dep, Cesium.Color.fromCssColorString("#3dff6e"), dep ? `출발 ${dep.ident}` : "");
+    mark(arr, Cesium.Color.fromCssColorString("#ff4df0"), arr ? `도착 ${arr.ident}` : "");
+    if (points && points.length > 1) {
+      this.routeEntity = v.entities.add({
+        polyline: {
+          positions: points.map((p) => Cesium.Cartesian3.fromRadians(p.lon, p.lat, 0)),
+          width: 3, arcType: Cesium.ArcType.GEODESIC,
+          material: new Cesium.PolylineGlowMaterialProperty({ glowPower: 0.2, color: Cesium.Color.fromCssColorString("#ff4df0") }),
+          clampToGround: false,
+        },
+      });
+    }
+  }
+
+  flyToAirport(apt, height = 60000) {
+    this.scene.camera.flyTo({ destination: Cesium.Cartesian3.fromRadians(apt.lon, apt.lat - 0.004 * (height / 60000), height), orientation: { heading: 0, pitch: Cesium.Math.toRadians(-60), roll: 0 }, duration: 1.8 });
+  }
+  flyHome(lat = 36, lon = 127.5) {
+    this.scene.camera.flyTo({ destination: Cesium.Cartesian3.fromDegrees(lon, lat - 12, 9.5e6), orientation: { heading: 0, pitch: Cesium.Math.toRadians(-80), roll: 0 }, duration: 0 });
   }
   resize() {
     this.viewer.resize();

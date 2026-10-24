@@ -84,7 +84,7 @@ export class Career {
       const types = aircraftList.filter((a) => a.cat === cat);
       if (!types.length) continue;
       const cands = navdb.nearestAirports(base.lat, base.lon, dMax * NM, 4000).filter((a) => {
-        if (a === base) return false;
+        if (a === base || a.country === "KP") return false;
         const [d] = gcDistBrg(base.lat, base.lon, a.lat, a.lon);
         if (d < dMin * NM) return false;
         if (cat === "heli") return true;

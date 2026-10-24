@@ -119,7 +119,7 @@ export class Cockpit3D {
     const airbus = spec.fbw === "airbus" || spec.maker === "Airbus" || spec.maker?.startsWith("ATR");
     const S = airbus ? STYLE.airbus : STYLE.boeing;
     const cx = 0.53; // aircraft centreline (eye is in the left seat)
-    const pz = -0.86, py = -0.36; // panel centre
+    const pz = -0.9, py = -0.5; // panel centre
     const tilt = -0.28;
     // main instrument panel
     this.box(2.1, 0.46, 0.06, S.panel, cx, py, pz - 0.03, tilt);
@@ -128,9 +128,9 @@ export class Cockpit3D {
     for (const [name, x] of disp) this.screen(name, dw, dh, x, py + 0.02, pz + 0.004, tilt);
     if (spec.maker === "Airbus") this.screen("eicas2", dw * 0.95, dh * 0.95, cx, py - 0.25, pz + 0.22, -1.0);
     // glareshield + MCP/FCU
-    this.box(2.2, 0.06, 0.32, S.glare, cx, py + 0.27, pz + 0.04, 0);
-    this.box(2.2, 0.08, 0.04, S.glare, cx, py + 0.22, pz + 0.2, 0.3);
-    this.screen("mcp", 0.78, 0.075, cx, py + 0.226, pz + 0.225, 0.3, this.root, 1024, 100);
+    this.box(2.2, 0.04, 0.3, S.glare, cx, py + 0.25, pz + 0.03, 0);
+    this.box(2.2, 0.06, 0.03, S.glare, cx, py + 0.21, pz + 0.18, 0.25);
+    this.screen("mcp", 0.56, 0.05, cx, py + 0.212, pz + 0.197, 0.25, this.root, 1024, 100);
     // pedestal with thrust levers, flap lever, speedbrake
     this.box(0.36, 0.22, 0.75, S.panel, cx, -0.66, -0.46, 0);
     this.box(0.36, 0.05, 0.7, S.glare, cx, -0.54, -0.46, 0);
@@ -177,12 +177,12 @@ export class Cockpit3D {
     this.box(0.04, 0.35, 1.2, S.wall, -0.8, 0.05, 0.05, 0);
     this.box(0.04, 0.35, 1.2, S.wall, cx * 2 + 0.8, 0.05, 0.05, 0);
     // window frames: windshield bottom on glareshield, centre post, corner posts, roof
-    const yb = py + 0.3, zb = pz - 0.08, yt = 0.32, zt = -0.55;
-    this.post([cx, yb, zb], [cx, yt, zt], 0.07, S.frame);
-    this.post([-0.42, yb, zb + 0.02], [-0.55, yt, zt + 0.12], 0.08, S.frame);
-    this.post([cx * 2 + 0.42, yb, zb + 0.02], [cx * 2 + 0.55, yt, zt + 0.12], 0.08, S.frame);
-    this.post([-0.78, yb - 0.04, zb + 0.5], [-0.72, yt - 0.02, zt + 0.55], 0.07, S.frame);
-    this.post([cx * 2 + 0.78, yb - 0.04, zb + 0.5], [cx * 2 + 0.72, yt - 0.02, zt + 0.55], 0.07, S.frame);
+    const yb = py + 0.27, zb = pz - 0.08, yt = 0.32, zt = -0.55;
+    this.post([cx, yb, zb], [cx, yt, zt], 0.05, S.frame);
+    this.post([-0.62, yb, zb + 0.05], [-0.7, yt, zt + 0.15], 0.05, S.frame);
+    this.post([cx * 2 + 0.62, yb, zb + 0.05], [cx * 2 + 0.7, yt, zt + 0.15], 0.05, S.frame);
+    this.post([-0.82, yb - 0.04, zb + 0.6], [-0.78, yt - 0.02, zt + 0.6], 0.05, S.frame);
+    this.post([cx * 2 + 0.82, yb - 0.04, zb + 0.6], [cx * 2 + 0.78, yt - 0.02, zt + 0.6], 0.05, S.frame);
     this.box(2.4, 0.06, 0.12, S.frame, cx, yt + 0.02, zt, 0.2);
     // overhead panel
     const oh = this.screen("overhead", 1.0, 0.75, cx, 0.43, -0.12, Math.PI / 2 + 0.35, this.root, 512, 384);
@@ -212,7 +212,7 @@ export class Cockpit3D {
     const S = STYLE.ga;
     const cx = 0.3;
     const glass = spec.cockpit === "g1000";
-    const pz = -0.72, py = -0.3;
+    const pz = -0.74, py = -0.38;
     this.box(1.35, 0.42, 0.05, S.panel, cx, py, pz - 0.02, -0.12);
     if (glass) {
       this.screen("pfd", 0.27, 0.2, -0.02, py + 0.04, pz + 0.01, -0.12, this.root, 640, 480);
@@ -222,7 +222,7 @@ export class Cockpit3D {
       this.screen("sixpack", 0.85, 0.3, cx - 0.05, py + 0.01, pz + 0.01, -0.12, this.root, 1024, 360);
     }
     // glareshield / cowl
-    this.box(1.4, 0.05, 0.35, S.glare, cx, py + 0.23, pz + 0.05, 0.05);
+    this.box(1.4, 0.03, 0.18, S.glare, cx, py + 0.225, pz + 0.04, 0.05);
     // yokes
     this.anim.yoke = this.buildYoke(0, py - 0.12, pz + 0.3, 0.12, 0x222222);
     this.buildYoke(0.62, py - 0.12, pz + 0.3, 0.12, 0x222222);
@@ -256,19 +256,17 @@ export class Cockpit3D {
     this.screen("upfront", 0.16, 0.12, 0, py + 0.05, pz + 0.03, -0.25, this.root, 512, 384);
     this.box(0.72, 0.04, 0.26, S.glare, 0, py + 0.18, pz + 0.02, 0);
     // HUD combiner glass
-    const hud = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.13), new THREE.MeshBasicMaterial({ color: 0x88ffaa, transparent: true, opacity: 0.08, side: THREE.DoubleSide }));
+    const hud = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 0.13), new THREE.MeshBasicMaterial({ color: 0x88ffaa, transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false }));
     hud.position.set(0, py + 0.3, pz + 0.06);
     hud.rotation.x = -0.4;
     this.root.add(hud);
-    this.post([-0.08, py + 0.2, pz + 0.05], [-0.08, py + 0.36, pz + 0.04], 0.012, 0x222222);
-    this.post([0.08, py + 0.2, pz + 0.05], [0.08, py + 0.36, pz + 0.04], 0.012, 0x222222);
     // side consoles
     this.box(0.18, 0.12, 0.8, S.wall, -0.38, -0.5, -0.1, 0);
     this.box(0.18, 0.12, 0.8, S.wall, 0.38, -0.5, -0.1, 0);
     // canopy bow
-    this.post([-0.42, -0.3, -0.55], [-0.15, 0.32, -0.25], 0.04, S.frame);
-    this.post([0.42, -0.3, -0.55], [0.15, 0.32, -0.25], 0.04, S.frame);
-    this.post([-0.15, 0.32, -0.25], [0.15, 0.32, -0.25], 0.04, S.frame);
+    this.post([-0.5, -0.3, -0.15], [-0.2, 0.36, 0.05], 0.03, S.frame);
+    this.post([0.5, -0.3, -0.15], [0.2, 0.36, 0.05], 0.03, S.frame);
+    this.post([-0.2, 0.36, 0.05], [0.2, 0.36, 0.05], 0.03, S.frame);
     // stick & throttle
     const st = new THREE.Group();
     st.position.set(spec.id === "f16" ? 0.33 : 0, -0.6, -0.32);
@@ -284,15 +282,15 @@ export class Cockpit3D {
 
   buildHeli(spec) {
     const S = STYLE.heli;
-    const pz = -0.7, py = -0.42;
-    this.box(0.9, 0.3, 0.05, S.panel, 0.35, py, pz, -0.4);
-    this.screen("heli", 0.85, 0.27, 0.35, py + 0.005, pz + 0.03, -0.4, this.root, 1024, 330);
-    this.box(0.92, 0.04, 0.2, S.glare, 0.35, py + 0.16, pz + 0.04, -0.1);
+    const pz = -0.72, py = -0.56;
+    this.box(0.9, 0.3, 0.05, S.panel, -0.3, py, pz, -0.5);
+    this.screen("heli", 0.85, 0.27, -0.3, py + 0.005, pz + 0.03, -0.5, this.root, 1024, 330);
+    this.box(0.92, 0.02, 0.12, S.glare, -0.3, py + 0.16, pz + 0.06, -0.1);
     // bubble frame
-    this.post([0.35, py + 0.18, pz], [0.35, 0.45, -0.25], 0.04, S.frame);
-    this.post([-0.4, -0.5, -0.4], [-0.35, 0.4, 0.1], 0.04, S.frame);
-    this.post([1.1, -0.5, -0.4], [1.05, 0.4, 0.1], 0.04, S.frame);
-    this.box(1.5, 0.04, 0.5, S.frame, 0.35, 0.45, 0.1, 0);
+    this.post([-0.3, py + 0.17, pz], [-0.3, 0.5, -0.3], 0.025, S.frame);
+    this.post([0.45, -0.55, -0.45], [0.42, 0.45, 0.1], 0.03, S.frame);
+    this.post([-1.05, -0.55, -0.45], [-1.0, 0.45, 0.1], 0.03, S.frame);
+    this.box(1.5, 0.04, 0.5, S.frame, -0.3, 0.5, 0.15, 0);
     // cyclic (between knees), collective (left)
     const cyc = new THREE.Group();
     cyc.position.set(0, -0.72, -0.25);
@@ -300,11 +298,11 @@ export class Cockpit3D {
     this.root.add(cyc);
     this.anim.stickRoot = cyc;
     const col = new THREE.Group();
-    col.position.set(-0.32, -0.6, 0.05);
+    col.position.set(-0.3, -0.6, 0.05);
     this.box(0.03, 0.03, 0.4, 0x1d1d1d, 0, 0, -0.2, 0, col, 0.6);
     this.root.add(col);
     this.anim.collective = col;
-    this.box(0.05, 0.4, 1.2, S.wall, -0.45, -0.6, 0, 0);
+    this.box(0.05, 0.4, 1.2, S.wall, 0.45, -0.6, 0, 0);
   }
 
   buildGlider(spec) {
