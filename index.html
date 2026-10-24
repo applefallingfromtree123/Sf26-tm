@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+    <title>SkyForge Flight Simulator</title>
+    <meta name="description" content="전 세계 실제 지형·위성영상 위에서 비행하는 전문가용 비행 시뮬레이터" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=B612+Mono&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./cesium/Widgets/widgets.css" />
+    <script>window.CESIUM_BASE_URL = "./cesium/";</script>
+    <script src="./cesium/Cesium.js"></script>
+  </head>
+  <body>
+    <div id="cesium"></div>
+    <canvas id="hud"></canvas>
+
+    <!-- ============================== cockpit panel -->
+    <div id="panel" class="hidden">
+      <div id="apbar"></div>
+      <canvas id="panelCanvas"></canvas>
+    </div>
+
+    <div id="topbar" class="hidden">
+      <span id="tb-ac"></span>
+      <span id="tb-view"></span>
+      <span id="tb-rate"></span>
+      <span id="tb-time"></span>
+      <span id="tb-fps"></span>
+    </div>
+    <div id="toasts"></div>
+
+    <!-- ============================== main menu -->
+    <div id="menu">
+      <header class="brand">
+        <div class="logo">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><path d="M4 36 L28 30 L40 8 L46 8 L40 30 L58 28 L60 32 L40 36 L46 54 L40 56 L28 38 L6 40 Z" fill="currentColor"/></svg>
+          <div>
+            <h1>SkyForge</h1>
+            <p>Flight Simulator · 실제 지구 전역 지형 · 전문가용</p>
+          </div>
+        </div>
+        <nav id="tabs">
+          <button data-tab="plan" class="active">비행 계획</button>
+          <button data-tab="aircraft">항공기</button>
+          <button data-tab="load">연료 · 탑재</button>
+          <button data-tab="weather">날씨 · 시간</button>
+          <button data-tab="settings">설정</button>
+          <button data-tab="keys">조작법</button>
+        </nav>
+      </header>
+
+      <main>
+        <section id="tab-plan" class="tab active">
+          <div class="grid2">
+            <div class="card">
+              <h2>출발</h2>
+              <label>공항 검색 (ICAO / IATA / 이름 / 도시)</label>
+              <input id="depSearch" placeholder="예: RKSI, ICN, Gimpo, KJFK" autocomplete="off" />
+              <div id="depResults" class="results"></div>
+              <div class="sel" id="depSel">선택 없음</div>
+              <label>활주로</label>
+              <select id="depRwy"></select>
+              <label>시작 위치</label>
+              <select id="startMode">
+                <option value="runway">활주로 — 이륙 준비 (엔진 시동)</option>
+                <option value="cold">활주로 — 콜드 &amp; 다크 (Ctrl+E 시동)</option>
+                <option value="approach">공중 — 도착 활주로 최종접근 10 NM</option>
+                <option value="cruise">공중 — 출발지 상공 순항 고도</option>
+              </select>
+            </div>
+            <div class="card">
+              <h2>도착</h2>
+              <label>공항 검색</label>
+              <input id="arrSearch" placeholder="예: RKPC, NRT, KLAX" autocomplete="off" />
+              <div id="arrResults" class="results"></div>
+              <div class="sel" id="arrSel">선택 없음</div>
+              <label>활주로 (ILS 자동 튜닝)</label>
+              <select id="arrRwy"></select>
+              <label>경유지 (VOR / NDB / 공항 식별부호, 공백 구분)</label>
+              <input id="route" placeholder="예: SEL OLMEN KAE" autocomplete="off" />
+              <div class="row">
+                <div><label>순항 고도 (ft)</label><input id="cruiseAlt" type="number" value="35000" step="1000" /></div>
+                <div><label>결심 고도 MINIMUMS (ft AGL)</label><input id="minimums" type="number" value="200" step="10" /></div>
+              </div>
+              <div class="info" id="routeInfo"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-aircraft" class="tab">
+          <div id="catChips" class="chips"></div>
+          <div id="acList" class="aclist"></div>
+        </section>
+
+        <section id="tab-load" class="tab">
+          <div class="card narrow">
+            <h2>연료 · 탑재량</h2>
+            <label>연료 <span id="fuelLbl"></span></label>
+            <input id="fuel" type="range" min="5" max="100" value="60" />
+            <label>승객 · 화물 <span id="payLbl"></span></label>
+            <input id="payload" type="range" min="0" max="100" value="50" />
+            <div class="info" id="massInfo"></div>
+          </div>
+        </section>
+
+        <section id="tab-weather" class="tab">
+          <div class="grid2">
+            <div class="card">
+              <h2>기상</h2>
+              <label>프리셋</label>
+              <select id="wxPreset">
+                <option value="clear">맑음 (CAVOK)</option>
+                <option value="few">약간 구름 (FEW)</option>
+                <option value="sct">흩어진 구름 (SCT)</option>
+                <option value="bkn">많은 구름 (BKN)</option>
+                <option value="ovc">흐림 · 저시정 (OVC)</option>
+                <option value="fog">안개 (VIS 400 m)</option>
+                <option value="windy">강풍 · 난기류</option>
+              </select>
+              <div class="row">
+                <div><label>지상풍 방향 (°)</label><input id="wxDir" type="number" value="270" min="0" max="360" /></div>
+                <div><label>지상풍 속도 (kt)</label><input id="wxSpd" type="number" value="5" min="0" max="80" /></div>
+              </div>
+              <div class="row">
+                <div><label>상층풍 방향 (°)</label><input id="wxDirUp" type="number" value="280" /></div>
+                <div><label>상층풍 속도 (kt)</label><input id="wxSpdUp" type="number" value="40" /></div>
+              </div>
+              <div class="row">
+                <div><label>돌풍 (kt)</label><input id="wxGust" type="number" value="0" /></div>
+                <div><label>난기류 (0–1)</label><input id="wxTurb" type="number" value="0" step="0.1" min="0" max="1" /></div>
+              </div>
+              <div class="row">
+                <div><label>시정 (km)</label><input id="wxVis" type="number" value="30" step="1" /></div>
+                <div><label>지상 기온 (°C)</label><input id="wxTemp" type="number" value="15" /></div>
+              </div>
+              <div class="row">
+                <div><label>QNH (hPa)</label><input id="wxQnh" type="number" value="1013" /></div>
+                <div><label>구름층 (예: SCT030 BKN080)</label><input id="wxClouds" value="" /></div>
+              </div>
+              <button id="metarBtn" class="secondary">출발 공항 실시간 METAR 적용</button>
+              <div class="info" id="metarInfo"></div>
+            </div>
+            <div class="card">
+              <h2>시간</h2>
+              <label><input type="checkbox" id="realTime" checked /> 현재 실제 시각 사용</label>
+              <label>UTC 날짜 · 시각</label>
+              <input id="utcTime" type="datetime-local" />
+              <label>현지 태양 시각 (빠른 설정)</label>
+              <div class="chips" id="timeChips">
+                <button data-h="6">새벽</button><button data-h="9">오전</button><button data-h="13">정오</button><button data-h="17.5">석양</button><button data-h="22">야간</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-settings" class="tab">
+          <div class="grid2">
+            <div class="card">
+              <h2>월드 (지도 · 지형)</h2>
+              <label>지표 영상</label>
+              <select id="setImagery"></select>
+              <label>지형 고도 데이터</label>
+              <select id="setTerrain"></select>
+              <label>Cesium ion 액세스 토큰 (Bing 항공사진 · World Terrain · Google 3D · OSM 건물)</label>
+              <input id="setIon" placeholder="무료 발급: ion.cesium.com" autocomplete="off" />
+              <label>Google Maps API 키 (Photorealistic 3D Tiles 직접 사용 시)</label>
+              <input id="setGoogle" placeholder="선택 사항" autocomplete="off" />
+              <label><input type="checkbox" id="setBuildings" /> OSM 3D 건물 표시 (ion 토큰 필요)</label>
+              <p class="hint">MSFS 2024는 Bing Maps 위성영상 + 포토그래메트리를 사용합니다. 가장 비슷한 결과를 원하면 ion 토큰을 넣고 <b>Bing Maps Aerial</b> 또는 <b>Google Photorealistic 3D Tiles</b>를 선택하세요. 토큰 없이도 Esri 위성영상 + SRTM 지형으로 전 세계 어디든 비행할 수 있습니다.</p>
+            </div>
+            <div class="card">
+              <h2>그래픽 · 사운드 · 단위</h2>
+              <label>그래픽 품질</label>
+              <select id="setQuality">
+                <option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option><option value="ultra">최상 (그림자 · HDR)</option>
+              </select>
+              <label>시야각 FOV <span id="fovLbl"></span></label>
+              <input id="setFov" type="range" min="40" max="90" value="60" />
+              <label>음량 <span id="volLbl"></span></label>
+              <input id="setVol" type="range" min="0" max="100" value="70" />
+              <label>기압 단위</label>
+              <select id="setBaro"><option value="hpa">hPa</option><option value="inhg">inHg</option></select>
+              <label><input type="checkbox" id="setCallouts" checked /> 고도 콜아웃 · GPWS 음성</label>
+              <h2 style="margin-top:18px">조이스틱 / 요크 / 페달</h2>
+              <div id="axisBind"></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-keys" class="tab">
+          <div class="card"><table id="keyTable" class="keys"></table></div>
+        </section>
+      </main>
+
+      <aside id="summary">
+        <div id="sumAc"></div>
+        <div id="sumRoute"></div>
+        <button id="startBtn" class="primary">비행 시작</button>
+        <div id="dbStatus" class="hint">항법 데이터 로딩 중…</div>
+      </aside>
+    </div>
+
+    <!-- ============================== overlays -->
+    <div id="loading" class="overlay hidden">
+      <div class="loadbox">
+        <div class="spinner"></div>
+        <div id="loadText">월드 스트리밍 중…</div>
+        <div class="bar"><div id="loadBar"></div></div>
+      </div>
+    </div>
+    <div id="pauseMenu" class="overlay hidden">
+      <div class="dialog">
+        <h2>일시정지</h2>
+        <button data-act="resume" class="primary">계속 비행</button>
+        <button data-act="restart">같은 조건으로 재시작</button>
+        <button data-act="menu">비행 계획으로 돌아가기</button>
+      </div>
+    </div>
+    <div id="crash" class="overlay hidden">
+      <div class="dialog danger">
+        <h2>비행 종료</h2>
+        <p id="crashReason"></p>
+        <button data-act="restart" class="primary">재시작</button>
+        <button data-act="menu">비행 계획으로</button>
+      </div>
+    </div>
+    <div id="help" class="overlay hidden"><div class="dialog wide"><h2>조작법</h2><table class="keys" id="helpTable"></table><button data-act="close">닫기 (H)</button></div></div>
+    <div id="checklist" class="floating hidden"></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
