@@ -282,12 +282,12 @@ export class Cockpit3D {
 
   buildHeli(spec) {
     const S = STYLE.heli;
-    const pz = -0.72, py = -0.56;
+    const pz = -0.72, py = -0.46;
     this.box(0.9, 0.3, 0.05, S.panel, -0.3, py, pz, -0.5);
     this.screen("heli", 0.85, 0.27, -0.3, py + 0.005, pz + 0.03, -0.5, this.root, 1024, 330);
     this.box(0.92, 0.02, 0.12, S.glare, -0.3, py + 0.16, pz + 0.06, -0.1);
     // bubble frame
-    this.post([-0.3, py + 0.17, pz], [-0.3, 0.5, -0.3], 0.025, S.frame);
+    this.post([-0.32, py + 0.17, pz - 0.05], [-0.32, 0.5, -0.45], 0.018, S.frame);
     this.post([0.45, -0.55, -0.45], [0.42, 0.45, 0.1], 0.03, S.frame);
     this.post([-1.05, -0.55, -0.45], [-1.0, 0.45, 0.1], 0.03, S.frame);
     this.box(1.5, 0.04, 0.5, S.frame, -0.3, 0.5, 0.15, 0);

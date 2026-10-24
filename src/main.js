@@ -294,7 +294,7 @@ class App {
 
     // cockpit
     this.view = "cockpit";
-    this.head = { yaw: 0, pitch: spec.cockpit === "airliner" ? -0.22 : spec.cockpit === "fighter" ? -0.05 : -0.16 };
+    this.head = { yaw: 0, pitch: spec.cockpit === "airliner" ? -0.22 : spec.cockpit === "fighter" ? -0.05 : spec.cockpit === "heli" ? -0.28 : -0.16 };
     this.zoom = 1;
     this.orbit.dist = Math.max(spec.L, spec.b) * 1.8;
     this.cockpit3d.build(spec);
